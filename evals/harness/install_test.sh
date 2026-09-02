@@ -65,8 +65,10 @@ case "$DISTRO" in
         cp /repo/packaging/arch/PKGBUILD "$WORK/PKGBUILD"
         # local-file source so makepkg needs no published release yet
         WHEEL_FILE="$(basename "$DIST"/jarvis_agent-*.whl)" || fail "wheel glob"
+        PKGVER="${WHEEL_FILE#jarvis_agent-}"
+        PKGVER="${PKGVER%%-*}"
         sed -i "s#^source=.*#source=(\"$WHEEL_FILE\")#" "$WORK/PKGBUILD"
-        sed -i "s#^pkgver=.*#pkgver=\"${WHEEL_FILE#jarvis_agent-}\"; pkgver=\"${pkgver%%-*}\"#" "$WORK/PKGBUILD" 2>/dev/null || true
+        sed -i "s#^pkgver=.*#pkgver=$PKGVER#" "$WORK/PKGBUILD"
         cp "$DIST"/jarvis_agent-*.whl "$WORK/" || fail "wheel copy"
         useradd -m builder 2>/dev/null || true
         chown -R builder:builder "$WORK"
