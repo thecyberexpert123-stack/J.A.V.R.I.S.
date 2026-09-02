@@ -11,6 +11,7 @@ DIST="/repo/dist"
 STATE_DIR="${JARVIS_STATE_DIR:-/tmp/jarvis-install-state}"
 
 fail() {
+    echo "::error title=install-test::$DISTRO: $1"
     echo "install-test :: FAIL $DISTRO: $1"
     exit 1
 }
@@ -61,8 +62,10 @@ case "$DISTRO" in
         # local-file source so makepkg needs no published release yet
         sed -i "s#^source=.*#source=(\"jarvis_agent-1.0.0-py3-none-any.whl\")#" "$WORK/PKGBUILD"
         cp "$DIST"/jarvis_agent-1.0.0-py3-none-any.whl "$WORK/" || fail "wheel copy"
-        (cd "$WORK" && makepkg -f --noconfirm >build.log 2>&1) \
-            || { tail -20 "$WORK/build.log"; fail "makepkg"; }
+        chown -R nobody:nobody "$WORK"
+        # makepkg refuses to run as root — build as nobody, then install as root
+        su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" \
+            || { tail -20 "$WORK/build.log" >&2; fail "makepkg"; }
         pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
             || fail "pacman -U"
         smoke
