@@ -719,6 +719,7 @@ def _build_gui_launch(params: Params, profile: MachineProfile) -> list[PlannedSt
             argv=("setsid", "--fork", *tokens),
             tier=Tier.T2,
             timeout_s=30.0,
+            detach=True,
         )
     ]
 

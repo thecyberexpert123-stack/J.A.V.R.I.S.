@@ -60,7 +60,10 @@
         "--",
         "xterm",
         "-title",
-        "jarvis-a"
+        "jarvis-a",
+        "-e",
+        "sleep",
+        "90"
       ],
       "expect": {
         "exit": 0,

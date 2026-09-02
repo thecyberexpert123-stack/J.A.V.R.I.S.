@@ -50,6 +50,7 @@ class _QuietRunner(Runner):
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
         stdin_text: str = "",
+        detach: bool = False,
     ) -> ExecResult:
         del echo
         return self._inner.run(
@@ -59,6 +60,7 @@ class _QuietRunner(Runner):
             extra_env=extra_env,
             echo=False,
             stdin_text=stdin_text,
+            detach=detach,
         )
 
     def terminate_current(self) -> None:
@@ -185,7 +187,7 @@ class GuiService:
         self._require("launch")
         argv = backends.setsid_launch(argv_tail)
         self._consent(f"launch {argv_tail[0]}", argv)
-        result = self._runner.run(argv)
+        result = self._runner.run(argv, timeout_s=30.0, detach=True)
         self._journal_action(
             "gui.launch",
             {"app": argv_tail[0], "tokens": list(argv_tail)},

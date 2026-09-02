@@ -58,6 +58,7 @@ class Runner:
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
         stdin_text: str = "",
+        detach: bool = False,
     ) -> ExecResult:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -103,20 +104,34 @@ class LocalRunner(Runner):
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
         stdin_text: str = "",
+        detach: bool = False,
     ) -> ExecResult:
         final = self._prepare_argv(argv, requires_root)
         env = dict(os.environ)
         if extra_env:
             env.update(extra_env)
 
-        proc = subprocess.Popen(
-            final,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
-            start_new_session=True,
-            env=env,
-        )
+        # detach: for spawns that outlive the command (GUI apps via setsid).
+        # Child fds must NOT be our pipes, or communicate() blocks on EOF
+        # until the detached process exits.
+        if detach:
+            proc = subprocess.Popen(
+                final,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
+        else:
+            proc = subprocess.Popen(
+                final,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
         self._current = proc
         if echo:
             print(f"    $ {' '.join(final)}", flush=True)

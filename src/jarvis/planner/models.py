@@ -37,6 +37,7 @@ class PlannedStep:
     optional: bool = False
     extra_env: Mapping[str, str] | None = None
     stdin_text: str = ""  # piped to the process when non-empty (e.g. tee)
+    detach: bool = False  # DEVNULL stdios; for spawns that outlive the command
 
 
 @dataclass(frozen=True)

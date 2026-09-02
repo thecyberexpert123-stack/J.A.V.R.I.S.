@@ -603,3 +603,22 @@ def test_i3_tree_skips_dockarea_bars() -> None:
     runner = FakeRunner(script=[(("i3-msg", "-t", "get_tree"), _result(json.dumps(tree)))])
     windows = backends.i3_list(runner)
     assert [w.title for w in windows] == ["xterm — real"]
+
+
+def test_open_app_uses_detach_mode(journal: Journal) -> None:
+    """gui open must not inherit runner pipes (CI hang found by m5 eval)."""
+
+    class DetachSpy(FakeRunner):
+        def run(self, argv, **kwargs):  # type: ignore[no-untyped-def]
+            assert kwargs.get("detach") is True, "detached spawns need DEVNULL stdios"
+            return super().run(argv, **kwargs)
+
+    service = GuiService(
+        DetachSpy(),
+        ApprovalPolicy(yes=True),
+        journal,
+        env={"DISPLAY": ":0"},
+        which_fn=_which(()),
+    )
+    outcome = service.open_app(("xterm",))
+    assert outcome.status == "done"

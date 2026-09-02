@@ -532,6 +532,7 @@ class Orchestrator:
                         extra_env=step.extra_env,
                         echo=self._echo,
                         stdin_text=step.stdin_text,
+                        detach=step.detach,
                     )
                 except Exception as exc:
                     self._journal.record_step(

@@ -46,6 +46,7 @@ class FakeRunner(Runner):
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
         stdin_text: str = "",
+        detach: bool = False,
     ) -> ExecResult:
         key = tuple(argv)
         self.calls.append((key, requires_root, extra_env))
