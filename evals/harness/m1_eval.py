@@ -20,7 +20,6 @@ import json
 import os
 import platform
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -28,8 +27,24 @@ from typing import Any
 TASK_TIMEOUT_S = 1800.0
 
 
+def _gh_escape(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def annotate(kind: str, title: str, message: str) -> None:
+    """Emit a GitHub check-run annotation when running inside Actions.
+
+    Annotations are served through api.github.com, which makes eval evidence
+    readable even where artifact/log blob hosts are unreachable (e.g. sandboxed
+    environments). Outside Actions this is a no-op.
+    """
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    print(f"::{kind} title={_gh_escape(title)}::{_gh_escape(message)}", flush=True)
+
+
 def run_cli(args: list[str], env: dict[str, str]) -> dict[str, Any]:
-    proc = subprocess.run(  # noqa: S603 - fixed argv in a test harness
+    proc = subprocess.run(
         ["python3", "-m", "jarvis", *args],
         capture_output=True,
         text=True,
@@ -50,9 +65,7 @@ def run_cli(args: list[str], env: dict[str, str]) -> dict[str, Any]:
 def check(expect: dict[str, Any], payload: dict[str, Any]) -> tuple[bool, str]:
     problems: list[str] = []
     if "status" in expect and payload.get("status") != expect["status"]:
-        problems.append(
-            f"status: expected {expect['status']!r}, got {payload.get('status')!r}"
-        )
+        problems.append(f"status: expected {expect['status']!r}, got {payload.get('status')!r}")
     if "playbook" in expect and payload.get("playbook") != expect["playbook"]:
         problems.append(
             f"playbook: expected {expect['playbook']!r}, got {payload.get('playbook')!r}"
@@ -64,10 +77,8 @@ def check(expect: dict[str, Any], payload: dict[str, Any]) -> tuple[bool, str]:
     if "error_contains" in expect:
         error = str(payload.get("error", ""))
         if expect["error_contains"] not in error:
-            problems.append(
-                f"error {error!r} does not contain {expect['error_contains']!r}"
-            )
-    expected_exit = {"succeeded": 0, "dry_run": 0}.get(str(expect.get("status")), None)
+            problems.append(f"error {error!r} does not contain {expect['error_contains']!r}")
+    expected_exit = {"succeeded": 0, "dry_run": 0}.get(str(expect.get("status")))
     if expected_exit is not None and payload.get("_exit") != expected_exit:
         problems.append(f"exit code: expected {expected_exit}, got {payload.get('_exit')}")
     return (not problems, "; ".join(problems) or "ok")
@@ -122,6 +133,11 @@ def main() -> int:
         if not ok:
             print(f"         -> {detail}")
             print(f"         -> error: {str(payload.get('error'))[:300]}")
+            annotate(
+                "error",
+                f"eval {args.distro_name}:{task['id']}",
+                f"{detail} | error: {str(payload.get('error'))[:200]}",
+            )
         results.append(
             {
                 "id": task["id"],
@@ -150,6 +166,11 @@ def main() -> int:
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"== summary: {summary['passed']}/{summary['total']} passed -> {results_path} ==")
+    annotate(
+        "notice",
+        f"eval {args.distro_name}",
+        f"{summary['passed']}/{summary['total']} tasks passed",
+    )
     return 1 if failures else 0
 
 
