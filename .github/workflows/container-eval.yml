@@ -12,13 +12,18 @@ on:
 
 jobs:
   eval:
-    name: ${{ matrix.distro }}
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        distro: ["debian:12", "ubuntu:24.04", "fedora:latest", "archlinux:latest", "alpine:latest"]
+        include:
+          - { distro: "debian:12", name: "debian-12" }
+          - { distro: "ubuntu:24.04", name: "ubuntu-24.04" }
+          - { distro: "fedora:latest", name: "fedora" }
+          - { distro: "archlinux:latest", name: "arch" }
+          - { distro: "alpine:latest", name: "alpine" }
     steps:
       - uses: actions/checkout@v4
 
@@ -28,11 +33,11 @@ jobs:
             -v "$PWD":/repo -w /repo \
             -e JARVIS_STATE_DIR=/tmp/jarvis-eval-state \
             ${{ matrix.distro }} \
-            sh evals/harness/run_in_container.sh "${{ matrix.distro }}"
+            sh evals/harness/run_in_container.sh "${{ matrix.name }}"
 
       - name: Upload eval results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results-${{ matrix.distro }}
+          name: eval-results-${{ matrix.name }}
           path: evals/results/*.json
