@@ -11,8 +11,9 @@ DIST="/repo/dist"
 STATE_DIR="${JARVIS_STATE_DIR:-/tmp/jarvis-install-state}"
 
 fail() {
-    echo "::error title=install-test::$DISTRO: $1"
-    echo "install-test :: FAIL $DISTRO: $1"
+    FLAT="$(printf %s "$1" | tr '\n' ' ' | tail -c 300)"
+    echo "::error title=install-test::$DISTRO: $FLAT"
+    echo "install-test :: FAIL $DISTRO: $FLAT"
     exit 1
 }
 
@@ -67,8 +68,8 @@ case "$DISTRO" in
         cp "$DIST"/jarvis_agent-*.whl "$WORK/" || fail "wheel copy"
         chown -R nobody:nobody "$WORK"
         # makepkg refuses to run as root — build as nobody, then install as root
-        su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" \
-            || fail "makepkg: $(tail -c 250 "$WORK/build.log" | tr '\n' ' ')"
+        su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" >su.log 2>&1 \
+            || fail "makepkg: $(cat su.log "$WORK/build.log" 2>/dev/null)"
         pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
             || fail "pacman -U"
         smoke
