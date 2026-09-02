@@ -26,7 +26,9 @@ deliberate, staged human decision.
 
 ## 3. Verified (observed)
 
-- ruff lint+format clean · mypy clean (43 files) · pytest **352 passed, 1 honest skip** (unit suite incl. 17 new M7 tests) · live 5 pass + 2 honest skips (live_llm needs a model)
+- ruff lint+format clean · mypy clean (43 files) · pytest **356 passed, 2 honest skips** (incl. 17 new M7 tests) · live 5 pass + 2 honest skips (live_llm needs a model)
+- Packaging matrix **5/5 on the v1.1.0 artifacts** (debian/ubuntu deb, fedora rpm, arch makepkg→pacman, alpine wheel) — the matrix caught two more real defects in the 1.1.0 bump: an unquoted `depends=(python>=3.10)` (a bash redirect, not a dependency) and hardcoded 1.0.0 versions in the harness
+- CI (unit/type/lint + M2 9/9 + M3 35/0 + M4 12/12 + M5 GUI) green on the M7 head; container eval green
 - `jarvis safety-check` → **7/7 PASS** on this machine (and in CI via the standard gate)
 - `--preview` blast radius: `tier=1 root=True network=True, commands: apt-get` observed live
 - Cautious gate: T2 `--yes` refused while ON; `--cautious-ok` proceeds — observed live
