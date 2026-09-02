@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M0` — governance + skeleton complete, CI wired · implementation begins at M1 (v0.0.1).**
+**Status: `M1 KERNEL` (v0.1.0) — working CLI agent: 10 playbooks, 5 distro backends, safety kernel, journal, undo. Container eval in progress.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |

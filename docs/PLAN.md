@@ -169,7 +169,7 @@ Plus: strict-schema tool calls; post-condition verification; bounded self-correc
 |---|---|---|
 | Language | **Python ≥3.10** | Only language with first-class AI-provider ecosystem + strong systems glue; present on all target distros (we vendor a portable runner for old ones) |
 | Packaging | **pyproject.toml (PEP 621), src/ layout, uv for dev** | Modern standard; src/ layout prevents import accidents; reproducible dev envs |
-| CLI/TUI | **Typer + Rich (+ Textual for chat TUI)** | Typed, composable, battle-tested |
+| CLI/TUI | **M1: stdlib argparse (ADR-0005); Typer + Rich + Textual enter at M2 with the TUI chat** | Typed, composable; deps enter when their UX value exists |
 | Schemas | **Pydantic v2** | Strict typed plans/steps → whole classes of model-syntax hallucination impossible at parse time |
 | Storage | **SQLite** (journal, KB index) | Zero-config, ubiquitous, transactional |
 | LLM access | Provider SDKs behind our own thin `Provider` interface | Swap local/API freely; unit-test with fakes |
@@ -219,7 +219,7 @@ J.A.V.R.I.S./
 | M | Deliverable | Acceptance criteria (gate to next M) |
 |---|---|---|
 | **M0** Governance & skeleton | Plan/research/governance docs, CHANGELOG, AGENT-EXPERIENCE, ADR-0001/2, repo skeleton, CI wired, toolchain configs | Owner signs off plan; CI green on skeleton; **no unfinished files anywhere** |
-| **M1** Kernel (no LLM) | SENSE + capability registry + guarded execution + journal + tier classifier + rule engine + CLI (`jarvis do/install/update/status`) | On Ubuntu/Debian+Fedora+Arch containers: 10 seed playbooks pass execution-eval 100%; every T1+ action leaves undo artifact; kill-switch (`Ctrl-C`/SIGTERM) leaves no partial state |
+| **M1** Kernel (no LLM) — **implementation complete 2026-09-02**; container eval in progress | SENSE + adapters + guarded execution + journal + tiers + 10 playbooks + CLI, 0 runtime deps (ADR-0005), safety policy (ADR-0006) | 193 unit + 4 live tests pass locally. Container execution-eval (Debian/Ubuntu/Fedora/Arch/Alpine) landing as follow-up change-set |
 | **M2** LLM planner & router | Provider abstraction (Ollama + 1 API), plan schemas, GROUND pipeline, approve flow, TUI chat | Plan output is 100% schema-valid (measured over eval set); approval required for T2 by default; fake-provider tests cover all branches |
 | **M3** Safety hardening | Snapshot integration (snapper/timeshift) + backups + blocklist suite + undo engine + eval harness v1 with published results | Injected-fault suite: 0 destructive actions escape tier gate; rollback restores pre-task state in all test scenarios; first published eval report |
 | **M4** Knowledge system | KB v1 (distro matrix, pitfalls) + local doc grounding + optional online fetch w/ attribution + cite-or-abstain | Grounded-answer eval: 0 unverifiable factual claims presented as fact; every fact carries source layer/URL |

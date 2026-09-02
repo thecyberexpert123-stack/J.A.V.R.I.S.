@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 # Distribution name avoids the (near-certain) PyPI collision of bare "jarvis";
 # the importable Python package is `jarvis` (see ADR-0004).
 name = "jarvis-linux"
-version = "0.0.1"
+version = "0.1.0"
 description = "JARVIS (Just A Rather Very Intelligent System) - a verified, safety-kernelled automation agent for Linux."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -73,3 +73,6 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "live: integration tests that run real commands on the host (enable with RUN_LIVE=1)",
+]
