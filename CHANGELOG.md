@@ -5,7 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 > Merge policy: the development agent **never merges** anything into `main`. All entries below land on the session working branch and reach `main` only through owner-approved merges.
 
-## [Unreleased] — M1 container evaluation
+## [Unreleased] — M1 container evaluation: 70/70 PASSED
+
+### Verified (observed, run 33637847042)
+- Container execution-eval green on **all five distros** — debian:12, ubuntu:24.04, fedora:latest, archlinux:latest, alpine:latest — **14/14 tasks each (70/70 overall)**, including real install/remove/upgrade across apt/dnf/pacman/zypper/apk, the undo round-trip with post-condition replay, and all honest-refusal paths. Evidence: check annotations + [eval summary](evals/results/m1-baseline.md). CI annotation channel added to the driver; artifact names sanitized; GITHUB_ACTIONS passed into containers.
 
 ### Added
 - `evals/catalog/m1.json` — M1 seed catalog: 14 executable expectations per distro (10 playbooks incl. undo round-trip, idempotent reinstall, system upgrade, honest service refusal in non-systemd containers, and three refusal cases: protected package, unmatched intent, invalid option-like name).
