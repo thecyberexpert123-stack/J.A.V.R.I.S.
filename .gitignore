@@ -29,3 +29,6 @@ htmlcov/
 # never in the repo; ignore defensively in case of local runs from checkout)
 *.sqlite3
 *.db
+
+# Generated eval result files (curated summaries are committed instead)
+evals/results/*.json
