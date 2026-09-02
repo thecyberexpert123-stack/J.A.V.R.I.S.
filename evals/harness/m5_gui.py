@@ -148,21 +148,34 @@ def _wait_for(path: Path, seconds: float) -> bool:
     return False
 
 
+def _read_tail(path: Path, lines: int = 15) -> str:
+    try:
+        return "\n".join(path.read_text(errors="replace").splitlines()[-lines:])
+    except OSError:
+        return "(no output captured)"
+
+
 def start_x_stack(env: dict[str, str]) -> list[subprocess.Popen[bytes]]:
     procs: list[subprocess.Popen[bytes]] = []
     xdisplay = ":99"
     xlock = Path("/tmp/.X99-lock")
     if xlock.exists():
         xlock.unlink()
+    xvfb_log = Path("/tmp/jarvis-m5-xvfb.log")
+    i3_log = Path("/tmp/jarvis-m5-i3.log")
     xvfb = subprocess.Popen(
         ["Xvfb", xdisplay, "-screen", "0", "1280x1024x24", "-nolisten", "tcp"],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=xvfb_log.open("w"),
     )
     procs.append(xvfb)
     env["DISPLAY"] = xdisplay
     if not _wait_for(Path("/tmp/.X11-unix/X99"), 15):
-        raise RuntimeError("Xvfb did not create its socket in time")
+        detail = f"Xvfb socket never appeared; Xvfb alive={xvfb.poll() is None};\n" + _read_tail(
+            xvfb_log
+        )
+        annotate("error", "m5-gui-startup", detail[:400])
+        raise RuntimeError(detail)
 
     conf = Path("/tmp/jarvis-m5-i3.conf")
     conf.write_text(
@@ -173,24 +186,36 @@ def start_x_stack(env: dict[str, str]) -> list[subprocess.Popen[bytes]]:
         encoding="utf-8",
     )
     i3 = subprocess.Popen(
-        ["i3", "-c", str(conf), "-a"],
+        ["i3", "-c", str(conf)],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=i3_log.open("w"),
         env=env,
     )
     procs.append(i3)
     socket_path = ""
+    probe_rc = -1
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline and not socket_path:
         probe = subprocess.run(["i3", "--get-socketpath"], capture_output=True, text=True, env=env)
+        probe_rc = probe.returncode
         if probe.returncode == 0 and probe.stdout.strip():
             socket_path = probe.stdout.strip()
         else:
             time.sleep(0.3)
     if not socket_path:
-        raise RuntimeError("i3 did not expose an IPC socket in time")
+        detail = (
+            f"i3 IPC socket never appeared; i3 alive={i3.poll() is None}; "
+            f"get-socketpath rc={probe_rc};\n" + _read_tail(i3_log)
+        )
+        annotate("error", "m5-gui-startup", detail[:400])
+        raise RuntimeError(detail)
     env["I3SOCK"] = socket_path
     time.sleep(1.0)  # let i3 finish its first pass
+    annotate(
+        "notice",
+        "m5-gui-startup",
+        f"Xvfb+{Path(socket_path).name} up; Xvfb pid={xvfb.pid}, i3 pid={i3.pid}",
+    )
     return procs
 
 
@@ -243,7 +268,10 @@ def main() -> int:
         if args.xvfb:
             procs = start_x_stack(env)
         for task in tasks:
-            ok, detail = run_task(task, env, repo_root)
+            try:
+                ok, detail = run_task(task, env, repo_root)
+            except Exception as exc:  # noqa: BLE001 - a crashing task is a failing task
+                ok, detail = False, f"harness exception: {exc.__class__.__name__}: {exc}"
             failures += 0 if ok else 1
             mark = "PASS" if ok else "FAIL"
             print(f"  [{mark}] {task['id']:<38} {detail}")
