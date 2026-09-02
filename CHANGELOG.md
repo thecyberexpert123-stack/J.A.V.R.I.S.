@@ -19,6 +19,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [0.4.0] - 2026-09-02 — M4 Knowledge system
+
+### Added
+- **Cited knowledge base** (`knowledge/*.json`, KB v1): 12 facts across kernel/distros/pitfalls; every fact carries sources (kernel-doc paths in `torvalds/linux`, man pages, specs, distro docs) and an optional local verifier; the store **refuses uncited facts at load** (ADR-0009).
+- **Local grounding** (`knowledge/grounding.py`): file_equals / file_exists / os_release_field / binary_present / command_ok verifiers; honest three-state results (verified / contradicted / unverifiable-here).
+- **Cite-or-abstain answers** (`knowledge/answers.py` + `jarvis explain`): answers always carry sources + on-machine verification status; anything outside the KB is refused, never guessed.
+- **Opt-in online verification** (`knowledge/fetch.py`, `JARVIS_ONLINE_DOCS=1`): kernel-doc citations verified against **`torvalds/linux` master** via the GitHub Contents API (owner-directed knowledge source; upstream reference, not vendored — ADR-0009); strict URL allowlist refuses anything else before a request; results cached in the state dir.
+- **`jarvis facts [topic]`** browser; KB version/count in `jarvis status`; `jarvis` console-script entry point (`pip install` now puts the CLI on PATH).
+- **Grounding eval** (`evals/harness/m4_grounding.py` + catalog): gate **0 unverifiable claims** — answered ⇒ cited; verified ⇒ verifier passed; kernel citations re-verified upstream in CI (online mode). Result: **12/12, 0 unverifiable claims** (offline 10/10; +2 upstream torvalds/linux checks).
+- Tests: +26 (store schema refusals, verifiers on the real host, answers honesty, CLI surface, allowlist-before-network, live upstream verification). Suite: **297 unit + 6 live**.
+
+### Changed
+- Package version 0.4.0; README quick start gains `explain`/`facts`; report addendum `evals/results/REPORT-m4.md`.
+
 ## [0.3.0] - 2026-09-02 — M3 Safety hardening
 
 ### Added

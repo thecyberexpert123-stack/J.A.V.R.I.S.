@@ -16,6 +16,8 @@ from jarvis.core.fingerprint import build_profile
 from jarvis.core.orchestrator import Orchestrator, TaskOutcome
 from jarvis.execution.runner import LocalRunner
 from jarvis.journal.sqlite import Journal, default_db_path
+from jarvis.knowledge.answers import answer as kb_answer
+from jarvis.knowledge.store import load_kb
 from jarvis.planner.llm import PlanRefused, build_plan
 from jarvis.planner.models import TaskStatus
 from jarvis.planner.playbooks import PLAYBOOKS, match_intent
@@ -83,6 +85,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
     except Exception as exc:  # status must never crash
         llm_line = f"probe failed: {exc}"
     print(f"llm planning    : {llm_line}")
+    try:
+        kb = load_kb()
+        print(f"knowledge base  : v{kb.version}, {len(kb.facts)} cited facts")
+    except Exception as exc:  # status must never crash
+        print(f"knowledge base  : unavailable ({exc})")
     print(f"journal         : {default_db_path()}")
     return 0
 
@@ -293,6 +300,73 @@ def _cmd_file(args: argparse.Namespace) -> int:
     return outcome.exit_code()
 
 
+def _cmd_explain(args: argparse.Namespace) -> int:
+    question = " ".join(args.question).strip()
+    if not question:
+        print("error: empty question", file=sys.stderr)
+        return 2
+    try:
+        kb = load_kb()
+    except Exception as exc:
+        print(f"error: knowledge base unavailable: {exc}", file=sys.stderr)
+        return 1
+    result = kb_answer(question, kb)
+    if args.json:
+        print(json.dumps(result.to_json_dict(), indent=2))
+        return 0 if result.status != "refused" else 2
+    if result.status == "refused":
+        print("I cannot answer this from cited knowledge and I will not guess.")
+        print(f"hint     : {result.note}")
+        return 2
+    print(f"fact     : {result.fact_id}")
+    print(f"claim    : {result.claim}")
+    print(f"machine  : {result.machine_status} — {result.machine_detail}")
+    print(f"note     : {result.note}")
+    for src in result.sources:
+        label = f"{src.get('kind')}: {src.get('ref')}"
+        if src.get("url"):
+            label += f" ({src['url']})"
+        print(f"source   : {label}")
+    return 0
+
+
+def _cmd_facts(args: argparse.Namespace) -> int:
+    try:
+        kb = load_kb()
+    except Exception as exc:
+        print(f"error: knowledge base unavailable: {exc}", file=sys.stderr)
+        return 1
+    facts = kb.facts
+    if args.topic:
+        wanted = args.topic.lower()
+        facts = tuple(f for f in facts if f.topic == wanted)
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "id": f.id,
+                        "topic": f.topic,
+                        "claim": f.claim,
+                        "sources": len(f.sources),
+                        "local_check": bool(f.verify),
+                    }
+                    for f in facts
+                ],
+                indent=2,
+            )
+        )
+        return 0
+    if not facts:
+        print(f"no facts for topic {args.topic!r} (topics: {sorted({f.topic for f in kb.facts})})")
+        return 0
+    print(f"knowledge base v{kb.version} — {len(facts)} fact(s):")
+    for fact in facts:
+        check = "local check" if fact.verify else "doc-sourced"
+        print(f"  {fact.id:<28} [{fact.topic}] {fact.claim[:70]}… ({check})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -348,6 +422,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_file_append.add_argument("text", nargs="+", help="single-line text to append")
     p_file_append.add_argument("--dry-run", action="store_true")
     p_file_append.set_defaults(func=_cmd_file)
+
+    p_explain = sub.add_parser(
+        "explain", help="answer a question from cited knowledge (cite-or-abstain)"
+    )
+    p_explain.add_argument("question", nargs="+", help="e.g. 'what is ostype'")
+    p_explain.set_defaults(func=_cmd_explain)
+
+    p_facts = sub.add_parser("facts", help="browse the knowledge base")
+    p_facts.add_argument("topic", nargs="?", default=None, help="filter by topic")
+    p_facts.set_defaults(func=_cmd_facts)
 
     return parser
 

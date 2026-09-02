@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M3 HARDENED` (v0.3.0) — engine + LLM planner behind a fault-tested safety kernel: snapshots, file-edit backups, 35-vector injection gate (0 escapes), eval-verified on 5 distros. Report: `evals/results/REPORT-m3.md`.**
+**Status: `M4 KNOWLEDGE` (v0.4.0) — engine + LLM planner + cited knowledge base behind a fault-tested safety kernel. Eval-verified on 5 distros; 0 unverifiable claims. Reports: `evals/results/`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -41,7 +41,16 @@ jarvis do "install htop"           # execute with journal + undo artifact
 jarvis undo <task-id>              # reverse a task (see: jarvis tasks)
 jarvis ask "set up monitoring"     # engine first; LLM planner for the rest
 jarvis chat                        # interactive REPL
+jarvis explain "what is ostype"    # cited answer + on-machine verification
+jarvis facts                       # browse the knowledge base (12 cited facts)
 ```
+
+Knowledge answers are **cite-or-abstain**: every answer names its sources
+(kernel docs in [`torvalds/linux`](https://github.com/torvalds/linux), man pages,
+distro docs) and whether the fact was verified *on this machine*; anything
+outside the knowledge base is refused, never guessed (ADR-0009). With
+`JARVIS_ONLINE_DOCS=1`, JARVIS additionally verifies its kernel-doc citations
+against `torvalds/linux` master on demand (CI does this on every push).
 
 Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
 `JARVIS_LOCAL_MODEL`); an **OpenAI-compatible** endpoint is opt-in

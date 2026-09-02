@@ -40,3 +40,8 @@ jobs:
 
       - name: Fault-injection gate (M3)
         run: python evals/harness/m3_faults.py --results evals/results/m3-faults-ci.json
+
+      - name: Grounding eval (M4, incl. torvalds/linux upstream verification)
+        env:
+          JARVIS_ONLINE_DOCS: "1"
+        run: python evals/harness/m4_grounding.py --catalog evals/catalog/m4.json --results evals/results/m4-grounding-ci.json
