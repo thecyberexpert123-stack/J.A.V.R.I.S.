@@ -43,9 +43,19 @@ install time; no pip-in-postinst.
 
 `packaging.yml` runs **on every push**: artifacts job (build + clean-venv smoke)
 → 5-distro install matrix (debian-12, ubuntu-24.04, fedora, arch, alpine), each
-installing its *native* artifact and running the KB smoke. Results: annotations
-`install-test :: PASS <distro>` on the branch runs. This is the plan's "install
-tested on clean containers of all Tier-1 distros" criterion, met.
+installing its *native* artifact and running the KB smoke.
+**OBSERVED: all 5 jobs success** (run 33653104688, commit `1f9f430`) — debian-12 ✓,
+ubuntu-24.04 ✓, fedora (rpmbuild→dnf) ✓, arch (makepkg→pacman -U) ✓, alpine (pip
+wheel) ✓. This is the plan's "install tested on clean containers of all Tier-1
+distros" criterion, met.
+
+The matrix earned its keep on day one — three real bugs found & fixed via its
+error annotations: (1) **Python 3.14 removed `importlib.abc.Traversable`** —
+fedora/alpine `latest` now ship 3.14, invisible to our 3.10–3.12 unit lanes;
+fixed by dropping the import (typeshed-typed `resources.files()`); (2) arch's
+`nobody` account is expired → build as a created `builder` user; (3) wheel-glob
+naming (`-py3` vs `_py3`) broke three distro lanes at once. Failure payloads are
+now single-line CI annotations by design.
 
 ## 5. Release pipeline & on-demand verification
 
@@ -76,4 +86,10 @@ tested on clean containers of all Tier-1 distros" criterion, met.
 ruff lint+format clean · mypy clean (41 files) · pytest **340 passed, 1 honest
 skip** · live 5 pass + 1 skip · M2 planner 9/9 · M3 fault gate 35/0 · M4
 grounding 12/12 (0 unverifiable claims) · M5 GUI 15/15 X-lane + 4/4 headless ·
-M1 containers 70/70 · packaging matrix 5/5 distros (CI).
+M1 containers 70/70 · **packaging matrix 5/5 distros (CI, observed)**.
+
+## 9. Release candidate
+
+`v1.0.0-rc1` tagged on the working branch; `release.yml` builds artifacts and
+opens a **draft** release for owner review. Publishing, the LICENSE decision,
+and any PyPI/AUR publication are the owner's acts.
