@@ -29,7 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **Vision fallback** (`jarvis gui describe`): screenshot → local Ollama vision model; abstains loudly when absent.
 - **`gui.launch` playbook** (NL "open firefox", registry 12): app-name argv only, no paths, case-preserving, T2.
 - **GUI eval** (`evals/harness/m5_gui.py` + 15-task catalog): real X stack (Xvfb + i3 + xterm) through the real CLI in CI (`gui-eval` job), gate ≥98% ⇒ 15/15; headless honesty subset (4 tasks) verified locally **4/4**; consent refusal is a graded task.
-- Tests: +37 (detection, matrix, parsers, policy, service consent/journal/privacy, wizard, vision stub, CLI, playbook). Suite: **~327 unit + 9 live**.
+- Tests: +38 (detection, matrix, parsers, policy, service consent/journal/privacy, wizard, vision stub, CLI, playbook, detach regression). Suite: **339 passed + 1 honest skip**; live 5 pass + 1 skip.
 
 ### Changed
 - Package version 0.5.0; README GUI section; report addendum `evals/results/REPORT-m5.md`.

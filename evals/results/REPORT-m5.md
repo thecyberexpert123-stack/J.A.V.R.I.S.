@@ -10,7 +10,7 @@
 | Verification | Where | Result |
 |---|---|---|
 | Headless honesty subset (4 tasks: honest status, injection refused, windows refused, wizard runs) | local sandbox + CI job | **4/4** |
-| **15-task GUI suite on a real X stack** (Xvfb + i3 + xterm + xdotool + wmctrl + scrot) through the real CLI | CI `gui-eval` job | see annotations on the branch run (gate ≥98% ⇒ 15/15) |
+| **15-task GUI suite on a real X stack** (Xvfb + i3 + xterm + xdotool + wmctrl + scrot) through the real CLI | CI `gui-eval` job | **15/15 — gate ≥98% met** (annotation `m5-gui :: 15/15 GUI tasks (xvfb-i3)`, commit `5b17ed5`) |
 | Detection & matrix unit tests (headless/x11/wayland, i3/hyprland/kde/sway selection, ydotoold-socket gating) | unit suite | 34 GUI tests |
 | Consent enforcement (T2 refusal without `--yes` in non-tty; injection never runs) | task 15 of catalog + unit tests | enforced |
 | Vision abstention (no Ollama → refuse, never fabricate) | task 12 + stubbed unit test | honest |
