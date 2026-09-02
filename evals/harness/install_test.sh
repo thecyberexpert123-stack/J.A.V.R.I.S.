@@ -19,13 +19,16 @@ fail() {
 smoke() {
     export JARVIS_STATE_DIR="$STATE_DIR"
     command -v jarvis >/dev/null || fail "jarvis not on PATH after install"
-    VERSION="$(jarvis --version)" || fail "jarvis --version failed"
+    VERSION="$(jarvis --version 2>&1)" || fail "jarvis --version failed: $VERSION"
     case "$VERSION" in
         jarvis\ *) : ;;
         *) fail "unexpected version output: $VERSION" ;;
     esac
-    jarvis --json explain "what is the kernel type" > "$STATE_DIR/answer.json" 2>/dev/null \
-        || fail "explain failed"
+    ANSWER="$(jarvis --json explain "what is the kernel type" 2>&1)" \
+        || fail "explain failed: $(printf %s "$ANSWER" | tail -c 200)"
+    printf %s "$ANSWER" > "$STATE_DIR/answer.json"
+    grep -q '"fact_id": "kernel.ostype"' "$STATE_DIR/answer.json" \
+        || fail "knowledge base missing from install (packaging bug): $ANSWER"
     grep -q '"fact_id": "kernel.ostype"' "$STATE_DIR/answer.json" \
         || fail "knowledge base missing from install (packaging bug)"
     echo "install-test :: PASS $DISTRO ($VERSION; KB shipped in package)"
@@ -65,7 +68,7 @@ case "$DISTRO" in
         chown -R nobody:nobody "$WORK"
         # makepkg refuses to run as root — build as nobody, then install as root
         su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" \
-            || { tail -20 "$WORK/build.log" >&2; fail "makepkg"; }
+            || fail "makepkg: $(tail -c 250 "$WORK/build.log" | tr '\n' ' ')"
         pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
             || fail "pacman -U"
         smoke
