@@ -545,7 +545,10 @@ def test_service_quiet_runner_keeps_stdout_pure(journal: Journal) -> None:
     class EchoSpy(FakeRunner):
         def run(self, argv, **kwargs):  # type: ignore[no-untyped-def]
             assert kwargs.get("echo") is False, "service must suppress echo in JSON mode"
-            return super().run(argv, **kwargs)
+            result = super().run(argv, **kwargs)
+            if argv[0] == "scrot" and result.ok:
+                Path("/tmp/x.png").write_bytes(b"\x89PNG")
+            return result
 
     service = GuiService(
         EchoSpy(
