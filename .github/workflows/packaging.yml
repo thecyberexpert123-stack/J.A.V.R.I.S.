@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "packaging/**"
+      - "evals/harness/install_test.sh"
       - "pyproject.toml"
       - ".github/workflows/packaging.yml"
   pull_request:
