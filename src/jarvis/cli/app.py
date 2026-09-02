@@ -29,6 +29,8 @@ from jarvis.planner.playbooks import PLAYBOOKS, match_intent
 from jarvis.providers.base import ProviderError
 from jarvis.providers.router import plan_routing
 from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
+from jarvis.safety.disclosure import blast_radius
+from jarvis.safety.selftest import run_battery
 from jarvis.system.models import InvalidInputError
 
 
@@ -63,7 +65,14 @@ def _build_orchestrator(args: argparse.Namespace) -> tuple[Orchestrator, Journal
     runner = LocalRunner()
     policy = ApprovalPolicy(yes=args.yes, silent=bool(args.json))
     echo = not args.json
-    return Orchestrator(profile, journal, runner, policy, echo=echo), journal
+    return Orchestrator(
+        profile,
+        journal,
+        runner,
+        policy,
+        echo=echo,
+        cautious_ok=getattr(args, "cautious_ok", False),
+    ), journal
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
@@ -105,6 +114,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
         )
     except Exception as exc:  # status must never crash
         print(f"gui             : probe failed ({exc})")
+    print(f"cautious mode   : {'ON' if _cautious_path().exists() else 'OFF'}")
     print(f"journal         : {default_db_path()}")
     return 0
 
@@ -115,6 +125,33 @@ def _cmd_do(args: argparse.Namespace) -> int:
         print("error: empty request", file=sys.stderr)
         return 2
     orch, _journal = _build_orchestrator(args)
+    if args.preview:
+        outcome = orch.run_intent(text, dry_run=True)
+        radius = blast_radius(outcome.steps)
+        if args.json:
+            print(json.dumps({"preview": outcome.to_json_dict(), "blast_radius": radius}, indent=2))
+            return outcome.exit_code()
+        print("[preview] plan (nothing executed, nothing asked):")
+        for step in outcome.steps:
+            step_argv = step["argv"]
+            assert isinstance(step_argv, list)
+            print(f"  {step['seq']}. {step['description']}")
+            print(f"       $ {' '.join(str(a) for a in step_argv)}")
+        print(
+            f"  blast radius: tier={radius['max_tier']} root={radius['requires_root']} "
+            f"network={radius['network']}"
+        )
+        commands = radius["commands"]
+        assert isinstance(commands, list)
+        print(f"  commands: {', '.join(str(c) for c in commands) or '(none)'}")
+        paths_map = radius["paths"]
+        assert isinstance(paths_map, dict)
+        for klass, paths_ in paths_map.items():
+            if paths_:
+                assert isinstance(paths_, list)
+                print(f"  {klass} paths: {', '.join(str(p_) for p_ in paths_)}")
+        print("  execute by re-running with --yes (review the plan above first).")
+        return outcome.exit_code()
     outcome = orch.run_intent(text, dry_run=args.dry_run)
     if args.json:
         print(json.dumps(outcome.to_json_dict(), indent=2))
@@ -500,6 +537,58 @@ def _build_gui(args: argparse.Namespace) -> GuiService:
     return GuiService(runner, policy, journal, echo=not args.json)
 
 
+def _cmd_safety_check(args: argparse.Namespace) -> int:
+    results = run_battery()
+    if args.json:
+        print(
+            json.dumps(
+                [{"name": r.name, "ok": r.ok, "detail": r.detail} for r in results],
+                indent=2,
+            )
+        )
+    else:
+        print("JARVIS safety self-test (real components, execution-blocked runner):")
+        for result in results:
+            mark = "PASS" if result.ok else "FAIL"
+            print(f"  [{mark}] {result.name}: {result.detail}")
+    failed = sum(1 for r in results if not r.ok)
+    verdict = "SAFETY CHECK PASSED" if failed == 0 else f"SAFETY CHECK FAILED ({failed})"
+    if args.json:
+        print(json.dumps({"verdict": verdict, "failed": failed}, indent=2))
+    else:
+        print(f"== {verdict} ==")
+    return 0 if failed == 0 else 1
+
+
+def _cautious_path() -> Path:
+    from jarvis.journal.sqlite import state_dir
+
+    return state_dir() / "cautious"
+
+
+def _cmd_cautious(args: argparse.Namespace) -> int:
+    marker = _cautious_path()
+    if args.action in ("on", "off"):
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        if args.action == "on":
+            marker.write_text("on\n", encoding="utf-8")
+        else:
+            marker.unlink(missing_ok=True)
+    active = marker.exists()
+    if args.json:
+        print(json.dumps({"cautious": active}, indent=2))
+        return 0
+    print(f"cautious mode : {'ON' if active else 'OFF'}")
+    if not active:
+        print("  (recommended while JARVIS is new on this machine: jarvis cautious on)")
+    if active:
+        print(
+            "  T2+ actions are blocked; review plans with --preview, then run "
+            "once with --cautious-ok, or disable: jarvis cautious off"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -520,6 +609,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_do = sub.add_parser("do", help='execute a request, e.g. jarvis do "install htop"')
     p_do.add_argument("--dry-run", action="store_true", help="print the plan; execute nothing")
+    p_do.add_argument(
+        "--preview",
+        action="store_true",
+        help="show the full plan + blast radius; never asks, never executes",
+    )
+    p_do.add_argument(
+        "--cautious-ok",
+        action="store_true",
+        help="execute this one T2+ action while cautious mode is ON",
+    )
     p_do.add_argument("text", nargs="+", help="natural-language request")
     p_do.set_defaults(func=_cmd_do)
 
@@ -603,6 +702,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_describe.add_argument("path", help="PNG path (e.g. from 'jarvis gui screenshot')")
     p_describe.add_argument("question", nargs="*", default=[], help="optional question")
     p_describe.set_defaults(func=_cmd_gui, gui_command="describe")
+
+    p_safety = sub.add_parser(
+        "safety-check",
+        help="prove the refusal guards are alive on this machine (no side effects)",
+    )
+    p_safety.set_defaults(func=_cmd_safety_check)
+
+    p_cautious = sub.add_parser(
+        "cautious",
+        help="early-days guard: block T2+ actions until you trust this machine's setup",
+    )
+    p_cautious.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
+    p_cautious.set_defaults(func=_cmd_cautious)
 
     return parser
 

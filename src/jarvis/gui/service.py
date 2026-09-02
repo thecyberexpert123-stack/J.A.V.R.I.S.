@@ -246,6 +246,12 @@ class GuiService:
             else ["ydotool", "type", "--", text]
         )
         self._consent(f"type {len(text)} chars into focused window", argv)
+        recheck = self.focused_title()
+        if recheck != target:
+            raise GuiPolicyError(
+                f"focus changed during approval ({target!r} -> {recheck!r}); "
+                "aborting injection (TOCTOU guard)"
+            )
         result = self._runner.run(argv)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
         redacted_argv = [
@@ -279,6 +285,12 @@ class GuiService:
             ["xdotool", "key", "--", combo] if backend == "xdotool" else ["ydotool", "key", combo]
         )
         self._consent(f"press {combo} in focused window", argv)
+        recheck = self.focused_title()
+        if recheck != target:
+            raise GuiPolicyError(
+                f"focus changed during approval ({target!r} -> {recheck!r}); "
+                "aborting injection (TOCTOU guard)"
+            )
         result = self._runner.run(argv)
         self._journal_action(
             "gui.key",

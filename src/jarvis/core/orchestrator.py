@@ -17,7 +17,7 @@ from typing import cast
 
 from jarvis.core.fingerprint import MachineProfile
 from jarvis.execution.runner import ExecResult, Runner
-from jarvis.journal.sqlite import Journal
+from jarvis.journal.sqlite import Journal, state_dir
 from jarvis.planner.models import (
     CheckSpec,
     PlannedStep,
@@ -64,6 +64,8 @@ class TaskOutcome:
     error: str = ""
     hint: str = ""
     snapshot_note: str = ""
+    rolled_back: bool = False
+    rollback_task_id: str = ""
 
     def exit_code(self) -> int:
         match self.status:
@@ -110,12 +112,16 @@ class Orchestrator:
         policy: ApprovalPolicy,
         echo: bool = True,
         snapshot_manager: SnapshotManager | None = None,
+        auto_rollback: bool = False,
+        cautious_ok: bool = False,
     ) -> None:
         self._profile = profile
         self._journal = journal
         self._runner = runner
         self._policy = policy
         self._echo = echo
+        self._auto_rollback = auto_rollback
+        self._cautious_ok = cautious_ok
         self._snapshots = snapshot_manager or SnapshotManager(runner)
         self._interrupted = False
         self._prev_handlers: dict[int, object] = {}
@@ -137,6 +143,37 @@ class Orchestrator:
         for sig, handler in self._prev_handlers.items():
             signal.signal(sig, cast("signal._HANDLER", handler))
         self._prev_handlers.clear()
+
+    # -- cautious mode (M7) ---------------------------------------------------
+    def _cautious_active(self) -> bool:
+        return (state_dir() / "cautious").exists()
+
+    def _cautious_block(self, tier: int) -> str | None:
+        """Refusal reason when cautious mode gates a T2+ action, else None."""
+        if tier < int(Tier.T2) or self._cautious_ok or not self._cautious_active():
+            return None
+        return (
+            "cautious mode is ON (early-days guard): T2+ actions are blocked. "
+            'Review the plan (jarvis do "..." --preview), then either pass '
+            "--cautious-ok for this one action or turn the guard off: jarvis cautious off"
+        )
+
+    def _maybe_auto_rollback(self, task_id: str) -> tuple[bool, str]:
+        """Best-effort automatic reversal of a failed consented task (M7).
+
+        Reuses undo() end-to-end — artifact rebuild, kernel revalidation
+        (check_argv + _revalidate_undo_step), verification — under the consent
+        already given to the original task (skip_consent), because prompting
+        mid-failure would strand partial state.
+        """
+        try:
+            rollback = self.undo(task_id, skip_consent=True)
+        except Exception as exc:
+            self._last_error = f"auto-rollback error: {exc}"
+            return False, ""
+        if rollback.status is TaskStatus.SUCCEEDED:
+            return True, rollback.task_id or ""
+        return False, ""
 
     # -- main entry --------------------------------------------------------
     def run_intent(self, text: str, *, dry_run: bool = False) -> TaskOutcome:
@@ -200,6 +237,9 @@ class Orchestrator:
             )
 
         tier = max(int(playbook.tier), max(int(s.tier) for s in steps))
+        cautious_reason = self._cautious_block(tier)
+        if cautious_reason is not None:
+            return self._refuse_journaled(text, playbook, params, cautious_reason, steps, tier)
         try:
             self._policy.decide(Tier(tier), steps)
         except ApprovalRefused as exc:
@@ -227,6 +267,13 @@ class Orchestrator:
             and status in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.INTERRUPTED)
         ):
             self._journal.store_undo(task_id, _undo_payload(undo_plan))
+        rolled_back, rollback_task_id = False, ""
+        if (
+            self._auto_rollback
+            and status in (TaskStatus.FAILED, TaskStatus.INTERRUPTED)
+            and self._journal.get_undo(task_id) is not None
+        ):
+            rolled_back, rollback_task_id = self._maybe_auto_rollback(task_id)
         self._journal.finish_task(task_id, status.value)
 
         return TaskOutcome(
@@ -240,6 +287,8 @@ class Orchestrator:
             undo_reason=undo_plan.reason,
             error=error,
             snapshot_note=snapshot_note,
+            rolled_back=rolled_back,
+            rollback_task_id=rollback_task_id,
         )
 
     def run_plan(
@@ -318,8 +367,32 @@ class Orchestrator:
                 steps=[_step_summary(i, s) for i, s in enumerate(all_steps)],
             )
 
+        plan_tier = max(int(s.tier) for s in all_steps)
+        cautious_reason = self._cautious_block(plan_tier)
+        if cautious_reason is not None:
+            block_id = _new_task_id()
+            self._journal.begin_task(
+                block_id,
+                request[:300],
+                f"plan/{provider_label}",
+                plan_tier,
+                {
+                    "intents": [playbook.id for playbook, _ in parts],
+                    "explanation": explanation[:200],
+                },
+                self._profile.to_dict(),
+            )
+            self._journal.finish_task(block_id, TaskStatus.REFUSED.value)
+            return TaskOutcome(
+                playbook_id="plan",
+                status=TaskStatus.REFUSED,
+                task_id=block_id,
+                tier=plan_tier,
+                steps=[_step_summary(i, s) for i, s in enumerate(all_steps)],
+                error=cautious_reason,
+            )
         try:
-            self._policy.decide(Tier(max(int(s.tier) for s in all_steps)), all_steps)
+            self._policy.decide(Tier(plan_tier), all_steps)
         except ApprovalRefused as exc:
             task_id = _new_task_id()
             self._journal.begin_task(
@@ -381,6 +454,13 @@ class Orchestrator:
             and terminal in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.INTERRUPTED)
         ):
             self._journal.store_undo(task_id, _undo_payload(undo_plan))
+        rolled_back, rollback_task_id = False, ""
+        if (
+            self._auto_rollback
+            and terminal in (TaskStatus.FAILED, TaskStatus.INTERRUPTED)
+            and self._journal.get_undo(task_id) is not None
+        ):
+            rolled_back, rollback_task_id = self._maybe_auto_rollback(task_id)
         self._journal.finish_task(task_id, terminal.value)
 
         return TaskOutcome(
@@ -394,10 +474,14 @@ class Orchestrator:
             undo_reason=undo_plan.reason,
             error=error,
             snapshot_note=snapshot_note,
+            rolled_back=rolled_back,
+            rollback_task_id=rollback_task_id,
         )
 
     # -- undo --------------------------------------------------------------
-    def undo(self, original_task_id: str, *, dry_run: bool = False) -> TaskOutcome:
+    def undo(
+        self, original_task_id: str, *, dry_run: bool = False, skip_consent: bool = False
+    ) -> TaskOutcome:
         if not _TASK_ID_RE.match(original_task_id):
             return TaskOutcome(
                 playbook_id="undo",
@@ -463,10 +547,11 @@ class Orchestrator:
                 steps=[_step_summary(i, s) for i, s in enumerate(steps)],
             )
 
-        try:
-            self._policy.decide(Tier(tier), steps)
-        except ApprovalRefused as exc:
-            return TaskOutcome(playbook_id="undo", status=TaskStatus.REFUSED, error=str(exc))
+        if not skip_consent:
+            try:
+                self._policy.decide(Tier(tier), steps)
+            except ApprovalRefused as exc:
+                return TaskOutcome(playbook_id="undo", status=TaskStatus.REFUSED, error=str(exc))
 
         undo_task_id = _new_task_id()
         self._journal.begin_task(

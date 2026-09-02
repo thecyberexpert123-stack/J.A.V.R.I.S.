@@ -19,6 +19,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [1.1.0] - 2026-09-02 — M7 Real-machine readiness
+
+### Added
+- **GUI focus TOCTOU guard**: the focused window is re-verified after consent, immediately before injection; a focus change aborts with disclosure (old → new). Keystrokes can no longer silently land in a window that took focus during approval.
+- **`jarvis safety-check`**: live refusal battery through the real components — protected package, destructive NL, flag smuggling, protected file append, T2 consent gate, GUI injection guard — with an execution-blocked sentinel runner (a refusal bug still cannot touch the system). Verdict: `SAFETY CHECK PASSED` (7/7).
+- **`jarvis do --preview`**: full plan + blast radius (max tier, root?, network?, commands, classified system/kernel/home paths) — never asks, never executes.
+- **Auto-rollback** (`jarvis do --auto-rollback`): failed consented tasks are reversed automatically via the full `undo()` path (artifact rebuild + kernel revalidation + verification) under the original task's consent; journal keeps the task `failed` and marks the undo applied.
+- **Cautious mode** (`jarvis cautious on/off/status`): blocks T2+ even with `--yes`; each action needs `--cautious-ok`; `--preview` always allowed. Status line in `jarvis status`.
+- **Live-LLM injection corpus** (`tests/test_fault_injection_live.py`, marker `live_llm`): 7 prompt-injection frames through a real local model; planner-or-kernel-must-refuse invariant; honest skip without a model. New weekly `llm-eval.yml` CI lane (Ollama + qwen2.5:0.5b) for real-model drift detection.
+- **`docs/SAFE-TESTING.md`**: verified/unverified map + 4-rung safe-testing ladder + safety-bug reporting protocol.
+- Tests: +18 (TOCTOU order-semantics runner, blast radius, cautious gates, auto-rollback with real journal, battery, CLI). Suite: **352 passed + 1 honest skip**.
+
+### Changed
+- `Orchestrator` gains `auto_rollback` / `cautious_ok`; `undo()` gains internal `skip_consent` (rollback runs under the original task's consent); `TaskOutcome` gains `rolled_back` / `rollback_task_id`.
+
 ## [1.0.0] - 2026-09-02 — M6 Production hardening & packaging
 
 ### Added

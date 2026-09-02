@@ -43,7 +43,13 @@ jarvis ask "set up monitoring"     # engine first; LLM planner for the rest
 jarvis chat                        # interactive REPL
 jarvis explain "what is ostype"    # cited answer + on-machine verification
 jarvis facts                       # browse the knowledge base (12 cited facts)
+jarvis safety-check                # prove the guards are alive on THIS machine
+jarvis do --preview "upgrade the system"   # plan + blast radius, nothing runs
+jarvis cautious on                 # early-days guard for a fresh machine
 ```
+
+> **Before a machine you care about:** read [`docs/SAFE-TESTING.md`](docs/SAFE-TESTING.md) —
+> the honest risk map and a 4-rung ladder for building trust.
 
 Knowledge answers are **cite-or-abstain**
 
