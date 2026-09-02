@@ -66,9 +66,10 @@ case "$DISTRO" in
         # local-file source so makepkg needs no published release yet
         sed -i "s#^source=.*#source=(\"jarvis_agent-1.0.0-py3-none-any.whl\")#" "$WORK/PKGBUILD"
         cp "$DIST"/jarvis_agent-*.whl "$WORK/" || fail "wheel copy"
-        chown -R nobody:nobody "$WORK"
-        # makepkg refuses to run as root — build as nobody, then install as root
-        su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" >su.log 2>&1 \
+        useradd -m builder 2>/dev/null || true
+        chown -R builder:builder "$WORK"
+        # makepkg refuses to run as root (and 'nobody' is expired) — build as builder
+        su -s /bin/sh builder -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" >su.log 2>&1 \
             || fail "makepkg: $(cat su.log "$WORK/build.log" 2>/dev/null)"
         pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
             || fail "pacman -U"

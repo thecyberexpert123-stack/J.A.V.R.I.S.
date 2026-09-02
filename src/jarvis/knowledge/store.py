@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from importlib import resources
-from importlib.abc import Traversable
 from pathlib import Path
 
 _REQUIRED_SOURCE_FIELDS = ("kind", "ref")
@@ -21,8 +20,12 @@ class KnowledgeError(ValueError):
     """The KB on disk violates its schema (curation defect, fail loudly)."""
 
 
-def _kb_files() -> list[Traversable]:
-    """KB files ship inside the package (ADR-0011); sorted by name for determinism."""
+def _kb_files():
+    """KB files ship inside the package (ADR-0011); sorted by name for determinism.
+
+    No explicit Traversable import: it moved between stdlib modules across
+    Python 3.10-3.14 and resources.files() is already correctly typed.
+    """
     root = resources.files("jarvis.knowledge") / "data"
     files = [path for path in root.iterdir() if path.name.endswith(".json")]
     return sorted(files, key=lambda path: path.name)
