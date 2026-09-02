@@ -64,14 +64,17 @@ case "$DISTRO" in
         WORK="$(mktemp -d)"
         cp /repo/packaging/arch/PKGBUILD "$WORK/PKGBUILD"
         # local-file source so makepkg needs no published release yet
-        sed -i "s#^source=.*#source=(\"jarvis_agent-1.0.0-py3-none-any.whl\")#" "$WORK/PKGBUILD"
+        WHEEL_FILE="$(basename "$DIST"/jarvis_agent-*.whl)" || fail "wheel glob"
+        sed -i "s#^source=.*#source=(\"$WHEEL_FILE\")#" "$WORK/PKGBUILD"
+        sed -i "s#^pkgver=.*#pkgver=\"${WHEEL_FILE#jarvis_agent-}\"; pkgver=\"${pkgver%%-*}\"#" "$WORK/PKGBUILD" 2>/dev/null || true
         cp "$DIST"/jarvis_agent-*.whl "$WORK/" || fail "wheel copy"
         useradd -m builder 2>/dev/null || true
         chown -R builder:builder "$WORK"
+        chmod -R a+rX "$WORK"
         # makepkg refuses to run as root (and 'nobody' is expired) — build as builder
         su -s /bin/sh builder -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" >su.log 2>&1 \
             || fail "makepkg: $(cat su.log "$WORK/build.log" 2>/dev/null)"
-        pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
+        pacman -U --noconfirm "$WORK"/jarvis-agent-*-any.pkg.tar.zst >/dev/null \
             || fail "pacman -U"
         smoke
         ;;
