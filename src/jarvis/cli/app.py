@@ -10,11 +10,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from jarvis import __version__
 from jarvis.core.fingerprint import build_profile
 from jarvis.core.orchestrator import Orchestrator, TaskOutcome
 from jarvis.execution.runner import LocalRunner
+from jarvis.gui.backends import GuiBackendError
+from jarvis.gui.service import GuiPolicyError, GuiService, GuiUnavailable
+from jarvis.gui.wizard import report as wizard_report
+from jarvis.gui.wizard import run_checks as wizard_checks
 from jarvis.journal.sqlite import Journal, default_db_path
 from jarvis.knowledge.answers import answer as kb_answer
 from jarvis.knowledge.store import load_kb
@@ -23,7 +28,7 @@ from jarvis.planner.models import TaskStatus
 from jarvis.planner.playbooks import PLAYBOOKS, match_intent
 from jarvis.providers.base import ProviderError
 from jarvis.providers.router import plan_routing
-from jarvis.safety.approval import ApprovalPolicy
+from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
 from jarvis.system.models import InvalidInputError
 
 
@@ -90,6 +95,16 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(f"knowledge base  : v{kb.version}, {len(kb.facts)} cited facts")
     except Exception as exc:  # status must never crash
         print(f"knowledge base  : unavailable ({exc})")
+    try:
+        from jarvis.gui.detect import probe as gui_probe
+
+        gui_env = gui_probe()
+        print(
+            f"gui             : {gui_env.session_type} ({gui_env.desktop}),"
+            f" {len(gui_env.tools)} GUI tool(s) on PATH"
+        )
+    except Exception as exc:  # status must never crash
+        print(f"gui             : probe failed ({exc})")
     print(f"journal         : {default_db_path()}")
     return 0
 
@@ -367,6 +382,124 @@ def _cmd_facts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_gui(args: argparse.Namespace) -> int:
+    kind = args.gui_command
+
+    if kind == "status":
+        service = _build_gui(args)
+        data = service.status()
+        if args.json:
+            print(json.dumps(data, indent=2))
+            return 0
+        session = data["session"]
+        assert isinstance(session, dict)
+        print(f"session   : {session['session_type']} ({session['desktop']})")
+        print(f"tools     : {', '.join(session['tools']) or '(none)'}")
+        caps = data["capabilities"]
+        assert isinstance(caps, dict)
+        for cap, binding in caps.items():
+            assert isinstance(binding, dict)
+            mark = binding.get("backend") or "unavailable"
+            print(f"  {cap:<11}: {mark} — {binding.get('reason')}")
+        atspi = data["atspi"]
+        assert isinstance(atspi, dict)
+        print(f"  atspi      detail: {atspi['detail']}")
+        if data.get("hint"):
+            print(f"hint      : {data['hint']}")
+        return 0
+
+    if kind == "wizard":
+        checks = wizard_checks()
+        if args.json:
+            print(
+                json.dumps(
+                    [
+                        {"name": c.name, "ok": c.ok, "detail": c.detail, "fix": c.fix}
+                        for c in checks
+                    ],
+                    indent=2,
+                )
+            )
+            return 0
+        print(wizard_report(checks))
+        return 0
+
+    if kind == "windows":
+        service = _build_gui(args)
+        try:
+            windows = service.windows()
+        except (GuiUnavailable, GuiPolicyError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        except GuiBackendError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(
+                json.dumps(
+                    [{"id": w.id, "title": w.title, "backend": w.backend} for w in windows],
+                    indent=2,
+                )
+            )
+        else:
+            for w in windows:
+                print(f"  {w.id:<12} {w.title}")
+        return 0
+
+    service = _build_gui(args)
+    try:
+        if kind == "open":
+            outcome = service.open_app(args.argv)
+        elif kind == "focus":
+            outcome = service.focus(args.title)
+        elif kind == "type":
+            outcome = service.type_text(" ".join(args.text))
+        elif kind == "key":
+            outcome = service.key(args.combo)
+        elif kind == "screenshot":
+            outcome = service.screenshot(Path(args.path))
+        elif kind == "close":
+            outcome = service.close(args.title)
+        elif kind == "describe":
+            question = " ".join(args.question).strip() or (
+                "Describe what is on this screen concisely."
+            )
+            text = service.describe(Path(args.path), question)
+            if args.json:
+                print(json.dumps({"description": text}, indent=2))
+            else:
+                print(text)
+            return 0
+        else:  # pragma: no cover - argparse guards this
+            return 2
+    except ApprovalRefused as exc:
+        print(f"refused  : {exc}", file=sys.stderr)
+        return 2
+    except (GuiPolicyError, GuiUnavailable) as exc:
+        print(f"error    : {exc}", file=sys.stderr)
+        return 2
+    except GuiBackendError as exc:
+        print(f"error    : {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(outcome.to_json_dict(), indent=2))
+    else:
+        print(f"action    : {outcome.action}")
+        print(f"status    : {outcome.status}")
+        if outcome.target:
+            print(f"target    : {outcome.target}")
+        print(f"detail    : {outcome.detail}")
+    return 0
+
+
+def _build_gui(args: argparse.Namespace) -> GuiService:
+    journal = Journal(default_db_path())
+    runner = LocalRunner()
+    policy = ApprovalPolicy(yes=args.yes, silent=bool(args.json))
+    return GuiService(runner, policy, journal)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -432,6 +565,44 @@ def build_parser() -> argparse.ArgumentParser:
     p_facts = sub.add_parser("facts", help="browse the knowledge base")
     p_facts.add_argument("topic", nargs="?", default=None, help="filter by topic")
     p_facts.set_defaults(func=_cmd_facts)
+
+    p_gui = sub.add_parser(
+        "gui", help="desktop control: capability matrix + consent-gated actions (ADR-0010)"
+    )
+    p_gui_sub = p_gui.add_subparsers(dest="gui_command", required=True)
+    for name, help_text in (
+        ("status", "show this machine's GUI capability matrix"),
+        ("wizard", "ydotool readiness wizard with distro-specific fixes"),
+        ("windows", "list windows via the session backend"),
+    ):
+        p_sub = p_gui_sub.add_parser(name, help=help_text)
+        p_sub.set_defaults(func=_cmd_gui, gui_command=name)
+    p_open = p_gui_sub.add_parser("open", help="launch an app detached (T2, consent-gated)")
+    p_open.add_argument("argv", nargs="+", help="app name + args, PATH lookup only")
+    p_open.set_defaults(func=_cmd_gui, gui_command="open")
+    p_focus = p_gui_sub.add_parser("focus", help="focus a window by title (T2)")
+    p_focus.add_argument("title", help="case-insensitive substring; must be unique")
+    p_focus.set_defaults(func=_cmd_gui, gui_command="focus")
+    p_type = p_gui_sub.add_parser(
+        "type", help="type text into the FOCUSED window (T2; target disclosed first)"
+    )
+    p_type.add_argument("text", nargs="+", help="single-line text, no control chars")
+    p_type.set_defaults(func=_cmd_gui, gui_command="type")
+    p_key = p_gui_sub.add_parser("key", help="send a key combo to the FOCUSED window (T2)")
+    p_key.add_argument("combo", help="e.g. Return, ctrl+c, super")
+    p_key.set_defaults(func=_cmd_gui, gui_command="key")
+    p_shot = p_gui_sub.add_parser("screenshot", help="capture the screen (T2: privacy)")
+    p_shot.add_argument("path", help="output PNG path")
+    p_shot.set_defaults(func=_cmd_gui, gui_command="screenshot")
+    p_close = p_gui_sub.add_parser("close", help="close a window (graceful WM delete, T2)")
+    p_close.add_argument("title", help="case-insensitive substring; must be unique")
+    p_close.set_defaults(func=_cmd_gui, gui_command="close")
+    p_describe = p_gui_sub.add_parser(
+        "describe", help="describe a screenshot with a local vision model (abstains if absent)"
+    )
+    p_describe.add_argument("path", help="PNG path (e.g. from 'jarvis gui screenshot')")
+    p_describe.add_argument("question", nargs="*", default=[], help="optional question")
+    p_describe.set_defaults(func=_cmd_gui, gui_command="describe")
 
     return parser
 

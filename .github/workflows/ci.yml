@@ -45,3 +45,24 @@ jobs:
         env:
           JARVIS_ONLINE_DOCS: "1"
         run: python evals/harness/m4_grounding.py --catalog evals/catalog/m4.json --results evals/results/m4-grounding-ci.json
+
+  gui-eval:
+    name: GUI eval on real X (M5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_ACTIONS: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install X stack (Xvfb + i3 + tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb i3-wm xterm xdotool wmctrl scrot
+          sudo apt-get install -y --no-install-recommends at-spi2-core python3-pyatspi || echo "AT-SPI optional packages unavailable"
+
+      - name: Headless honesty subset (refusals without a display)
+        run: python3 evals/harness/m5_gui.py --catalog evals/catalog/m5.json --results evals/results/m5-gui-headless-ci.json --headless
+
+      - name: 15-task GUI suite on Xvfb + i3
+        run: python3 evals/harness/m5_gui.py --catalog evals/catalog/m5.json --results evals/results/m5-gui-ci.json --xvfb

@@ -19,6 +19,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [0.5.0] - 2026-09-02 — M5 GUI control
+
+### Added
+- **GUI capability matrix** (`jarvis gui status`): honest per-machine report of session (x11/wayland/headless), desktop, and per-capability backend — availability never pretended (ADR-0010).
+- **Backends**: X11 (wmctrl/xdotool/scrot), i3/sway IPC (get_tree JSON walk, focus verification), Hyprland (hyprctl -j), KDE Wayland (kdotool when present; spectacle), GNOME Wayland (gdbus Shell screenshot), Wayland input via ydotool gated on a live `ydotoold` socket; AT-SPI optional read layer via `pyatspi` (honest absence).
+- **Consent-gated actions** (`jarvis gui open/focus/type/key/screenshot/close`): focused-window target disclosure BEFORE acting, T2 approval via the standard policy, journaled; **typed text is never persisted** (length + sha256 prefix only — a unit test caught the argv leak, fixed); injection is CLI-only, unreachable from NL playbooks; text/key-combo/launch-argv policies.
+- **ydotool wizard** (`jarvis gui wizard`): real readiness checks with distro-specific fix commands (apt/dnf/pacman/apk).
+- **Vision fallback** (`jarvis gui describe`): screenshot → local Ollama vision model; abstains loudly when absent.
+- **`gui.launch` playbook** (NL "open firefox", registry 12): app-name argv only, no paths, case-preserving, T2.
+- **GUI eval** (`evals/harness/m5_gui.py` + 15-task catalog): real X stack (Xvfb + i3 + xterm) through the real CLI in CI (`gui-eval` job), gate ≥98% ⇒ 15/15; headless honesty subset (4 tasks) verified locally **4/4**; consent refusal is a graded task.
+- Tests: +37 (detection, matrix, parsers, policy, service consent/journal/privacy, wizard, vision stub, CLI, playbook). Suite: **~327 unit + 9 live**.
+
+### Changed
+- Package version 0.5.0; README GUI section; report addendum `evals/results/REPORT-m5.md`.
+
 ## [0.4.0] - 2026-09-02 — M4 Knowledge system
 
 ### Added

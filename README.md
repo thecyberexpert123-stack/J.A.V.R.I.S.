@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M4 KNOWLEDGE` (v0.4.0) — engine + LLM planner + cited knowledge base behind a fault-tested safety kernel. Eval-verified on 5 distros; 0 unverifiable claims. Reports: `evals/results/`.**
+**Status: `M5 GUI` (v0.5.0) — engine + LLM planner + cited knowledge + capability-matrix GUI control behind a fault-tested safety kernel. Eval-verified on 5 distros; 15-task GUI suite on real X in CI. Reports: `evals/results/`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -45,7 +45,14 @@ jarvis explain "what is ostype"    # cited answer + on-machine verification
 jarvis facts                       # browse the knowledge base (12 cited facts)
 ```
 
-Knowledge answers are **cite-or-abstain**: every answer names its sources
+Knowledge answers are **cite-or-abstain**
+
+GUI control is a **capability matrix**, not a promise: `jarvis gui status` reports
+exactly what this desktop supports (X11 · i3/sway · Hyprland · KDE · GNOME; AT-SPI
+when present). Keystroke injection always shows you the focused window it will type
+into and asks for consent — and typed text is never written to the journal.
+`jarvis gui wizard` checks ydotool readiness on Wayland with distro-specific fixes.
+: every answer names its sources
 (kernel docs in [`torvalds/linux`](https://github.com/torvalds/linux), man pages,
 distro docs) and whether the fact was verified *on this machine*; anything
 outside the knowledge base is refused, never guessed (ADR-0009). With

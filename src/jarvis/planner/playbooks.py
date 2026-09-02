@@ -17,6 +17,7 @@ from jarvis.execution.runner import ExecResult, Runner
 from jarvis.planner.fileops import _build_append, _match_append, _undo_append, _verify_append
 from jarvis.planner.models import CheckSpec, PlannedStep, UndoPlan, UndoStatus, Verification
 from jarvis.safety.tiers import (
+    SafetyRefusal,
     Tier,
     check_removal_allowed,
     validate_package_name,
@@ -688,6 +689,60 @@ def _verify_sysinfo(
 # registry + dispatch
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# playbook: gui.launch (ADR-0010; app-name only, never paths; case-preserving)
+# --------------------------------------------------------------------------
+
+
+_GUI_LAUNCH_RE = re.compile(r"^(?:open|launch|run|start)\s+(?P<app>[A-Za-z0-9][A-Za-z0-9 ._+-]*)$")
+_GUI_LAUNCH_TOKEN_RE = re.compile(r"^-{0,2}[A-Za-z0-9][A-Za-z0-9._+-]*$")
+
+
+def _match_gui_launch(request: str) -> Params | None:
+    matched = _GUI_LAUNCH_RE.match(request.strip())
+    if not matched:
+        return None
+    tokens = tuple(matched.group("app").split())
+    if not all(_GUI_LAUNCH_TOKEN_RE.fullmatch(token) for token in tokens):
+        return None
+    return {"app": tokens[0], "tokens": list(tokens)}
+
+
+def _build_gui_launch(params: Params, profile: MachineProfile) -> list[PlannedStep]:
+    raw = params.get("tokens")
+    tokens = tuple(str(t) for t in raw) if isinstance(raw, list) else ()
+    if not tokens or not all(_GUI_LAUNCH_TOKEN_RE.fullmatch(t) for t in tokens):
+        raise SafetyRefusal("gui.launch: invalid app argv")
+    return [
+        PlannedStep(
+            description=f"launch {tokens[0]} (detached GUI process)",
+            argv=("setsid", "--fork", *tokens),
+            tier=Tier.T2,
+            timeout_s=30.0,
+        )
+    ]
+
+
+def _verify_gui_launch(
+    params: Params,
+    profile: MachineProfile,
+    runner: Runner,
+    step_results: Sequence[ExecResult | None] | None,
+) -> Verification:
+    if not step_results or not step_results[0]:
+        return Verification(ok=False, detail="no step result recorded for the launch")
+    first = step_results[0]
+    return Verification(
+        ok=first.ok,
+        detail=f"setsid exit={first.exit_code} (window appearance not awaited)",
+        checks=(("launch command succeeded", first.ok, first.stderr_tail or "ok"),),
+    )
+
+
+def _undo_gui_launch(params: Params, profile: MachineProfile) -> UndoPlan:
+    return _no_undo("a launched app cannot be reverted by the kernel; close it manually")
+
+
 PLAYBOOKS: tuple[Playbook, ...] = (
     Playbook(
         id="pkg.upgrade",
@@ -790,6 +845,15 @@ PLAYBOOKS: tuple[Playbook, ...] = (
         verify=_verify_append,
         undo=_undo_append,
     ),
+    Playbook(
+        id="gui.launch",
+        description="launch a desktop app detached (T2, approval-gated; ADR-0010)",
+        tier=Tier.T2,
+        match=_match_gui_launch,
+        build=_build_gui_launch,
+        verify=_verify_gui_launch,
+        undo=_undo_gui_launch,
+    ),
 )
 
 
@@ -803,7 +867,7 @@ def match_intent(text: str) -> tuple[Playbook, Params] | None:
     collapsed = re.sub(r"\s+", " ", text.strip())
     normalized = collapsed.lower()
     for playbook in PLAYBOOKS:
-        source = collapsed if playbook.id.startswith("file.") else normalized
+        source = collapsed if playbook.id.startswith(("file.", "gui.")) else normalized
         params = playbook.match(source)
         if params is not None:
             return playbook, params
