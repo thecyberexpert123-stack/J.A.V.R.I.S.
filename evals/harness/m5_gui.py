@@ -270,7 +270,7 @@ def main() -> int:
         for task in tasks:
             try:
                 ok, detail = run_task(task, env, repo_root)
-            except Exception as exc:  # noqa: BLE001 - a crashing task is a failing task
+            except Exception as exc:
                 ok, detail = False, f"harness exception: {exc.__class__.__name__}: {exc}"
             failures += 0 if ok else 1
             mark = "PASS" if ok else "FAIL"
