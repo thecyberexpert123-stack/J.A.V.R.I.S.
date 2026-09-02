@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M1 KERNEL` (v0.1.0) — working CLI agent: 10 playbooks, 5 distro backends, safety kernel, journal, undo. Container eval in progress.**
+**Status: `M2 PLANNER` (v0.2.0) — deterministic engine + LLM planner (local Ollama first, OpenAI-compatible opt-in) behind one safety kernel. Eval-verified on 5 distros.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -30,6 +30,25 @@ computer-use agents reach ~63–76% on the OSWorld benchmark. This project's con
 verifiable: **≥98% execution-verified success on its published, versioned task catalog**, with
 graceful refusal or escalation outside it, and all evaluation results auditable in the open.
 Details: [`docs/PLAN.md` §3](docs/PLAN.md).
+
+## Quick start (from a checkout)
+
+```bash
+pip install .                      # zero runtime dependencies
+jarvis status                      # what JARVIS sees on this machine
+jarvis do --dry-run "install htop" # deterministic engine: exact plan, nothing run
+jarvis do "install htop"           # execute with journal + undo artifact
+jarvis undo <task-id>              # reverse a task (see: jarvis tasks)
+jarvis ask "set up monitoring"     # engine first; LLM planner for the rest
+jarvis chat                        # interactive REPL
+```
+
+Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
+`JARVIS_LOCAL_MODEL`); an **OpenAI-compatible** endpoint is opt-in
+(`JARVIS_OPENAI_API_KEY`, `JARVIS_OPENAI_BASE_URL`, `JARVIS_OPENAI_MODEL`);
+`JARVIS_REMOTE_LLM=0` disables the remote fallback. The LLM never issues
+commands — it proposes intents that must pass the same validators as the
+deterministic engine (ADR-0007).
 
 ## Status of this repository
 

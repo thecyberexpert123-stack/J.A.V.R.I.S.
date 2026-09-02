@@ -16,8 +16,13 @@ from jarvis.core.fingerprint import build_profile
 from jarvis.core.orchestrator import Orchestrator, TaskOutcome
 from jarvis.execution.runner import LocalRunner
 from jarvis.journal.sqlite import Journal, default_db_path
-from jarvis.planner.playbooks import PLAYBOOKS
+from jarvis.planner.llm import PlanRefused, build_plan
+from jarvis.planner.models import TaskStatus
+from jarvis.planner.playbooks import PLAYBOOKS, match_intent
+from jarvis.providers.base import ProviderError
+from jarvis.providers.router import plan_routing
 from jarvis.safety.approval import ApprovalPolicy
+from jarvis.system.models import InvalidInputError
 
 
 def _print_outcome(outcome: TaskOutcome) -> None:
@@ -70,6 +75,12 @@ def _cmd_status(args: argparse.Namespace) -> int:
         f" (sudo {'available' if profile.sudo_available else 'unavailable'})"
     )
     print(f"python          : {profile.python_version}")
+    try:
+        routing = plan_routing()
+        llm_line = f"{routing.mode} — {routing.note}"
+    except Exception as exc:  # status must never crash
+        llm_line = f"probe failed: {exc}"
+    print(f"llm planning    : {llm_line}")
     print(f"journal         : {default_db_path()}")
     return 0
 
@@ -134,6 +145,132 @@ def _cmd_tasks(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ask_flow(orch: Orchestrator, args: argparse.Namespace, text: str) -> TaskOutcome:
+    """Engine-first routing: deterministic playbooks, LLM planner otherwise."""
+    quiet = bool(args.json)
+    try:
+        matched = match_intent(text)
+    except InvalidInputError as exc:
+        return TaskOutcome(
+            playbook_id="<unmatched>",
+            status=TaskStatus.REFUSED,
+            error=f"invalid input: {exc}",
+        )
+    if matched is not None:
+        if not quiet:
+            print("[engine] deterministic playbook match — LLM not consulted")
+        return orch.run_intent(text, dry_run=args.dry_run)
+
+    routing = plan_routing()
+    if routing.mode == "none" or routing.provider is None:
+        return TaskOutcome(
+            playbook_id="<unmatched>",
+            status=TaskStatus.REFUSED,
+            error="no planning backend available for this request",
+            hint=(
+                f"{routing.note}. Install Ollama (local-first, ADR-0003) or "
+                "configure the remote endpoint, or use 'jarvis do' with a "
+                "supported playbook intent."
+            ),
+        )
+    provider = routing.provider
+    if not quiet:
+        print(f"[planner] asking {routing.mode}:{provider.name}/{provider.model} for a plan...")
+    try:
+        proposed = build_plan(text, provider)
+    except PlanRefused as exc:
+        return TaskOutcome(
+            playbook_id="plan",
+            status=TaskStatus.REFUSED,
+            error=str(exc),
+            hint=exc.hint,
+        )
+    except ProviderError as exc:
+        return TaskOutcome(
+            playbook_id="plan",
+            status=TaskStatus.FAILED,
+            error=f"planning backend failed: {exc}",
+        )
+    if not quiet:
+        print(
+            f"[planner] proposal ({len(proposed.parts)} step/s): "
+            f"{proposed.explanation or '(no explanation)'}"
+        )
+        for i, (playbook, _params) in enumerate(proposed.parts, 1):
+            print(f"  {i}. {playbook.id:<18} <- {proposed.step_texts[i - 1]}")
+    return orch.run_plan(
+        text,
+        list(proposed.parts),
+        explanation=proposed.explanation,
+        provider_label=f"{routing.mode}:{provider.name}/{provider.model}",
+        dry_run=args.dry_run,
+    )
+
+
+def _cmd_ask(args: argparse.Namespace) -> int:
+    text = " ".join(args.text).strip()
+    if not text:
+        print("error: empty request", file=sys.stderr)
+        return 2
+    orch, _journal = _build_orchestrator(args)
+    outcome = _ask_flow(orch, args, text)
+    if args.json:
+        print(json.dumps(outcome.to_json_dict(), indent=2))
+    else:
+        _print_outcome(outcome)
+    return outcome.exit_code()
+
+
+def _cmd_chat(args: argparse.Namespace) -> int:
+    args.json = False  # chat is a human surface
+    orch, journal = _build_orchestrator(args)
+    print("JARVIS chat — deterministic engine first; local/remote planner for the rest.")
+    print("commands: /status /playbooks /tasks [n] /undo <id> /help — Ctrl-D or /quit exits")
+    while True:
+        try:
+            line = input("jarvis> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not line:
+            continue
+        low = line.lower()
+        if low in {"q", "quit", "exit", "/quit"}:
+            return 0
+        if low in {"h", "help", "/help"}:
+            print(
+                "Type a request in plain English. /tasks lists recent task ids; "
+                "/undo <id> reverses one."
+            )
+            continue
+        if low == "/status":
+            _cmd_status(args)
+            continue
+        if low == "/playbooks":
+            _cmd_playbooks(args)
+            continue
+        if low.startswith("/tasks"):
+            tokens = line.split()
+            limit = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else 10
+            tasks = journal.recent_tasks(limit=limit)
+            if not tasks:
+                print("no tasks journaled yet")
+            for t in tasks:
+                print(
+                    f"  {t['id']}  {t['status']:<11} {t['playbook_id']:<20} "
+                    f"{str(t['intent_text'])[:60]}"
+                )
+            continue
+        if low.startswith("/undo"):
+            tokens = line.split()
+            if len(tokens) != 2:
+                print("usage: /undo <task-id>")
+                continue
+            _print_outcome(orch.undo(tokens[1]))
+            continue
+        _print_outcome(_ask_flow(orch, args, line))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -168,6 +305,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_tasks = sub.add_parser("tasks", help="list recent journaled tasks")
     p_tasks.add_argument("--limit", type=int, default=20)
     p_tasks.set_defaults(func=_cmd_tasks)
+
+    p_ask = sub.add_parser(
+        "ask",
+        help="engine-first request; an LLM planner handles what playbooks cannot",
+    )
+    p_ask.add_argument("--dry-run", action="store_true", help="print the plan only")
+    p_ask.add_argument("text", nargs="+", help="natural-language request")
+    p_ask.set_defaults(func=_cmd_ask)
+
+    p_chat = sub.add_parser("chat", help="interactive chat (engine + planner)")
+    p_chat.set_defaults(func=_cmd_chat)
 
     return parser
 

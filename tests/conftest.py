@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import threading
 from collections.abc import Mapping, Sequence
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
@@ -113,3 +116,97 @@ __all__ = [
     "make_profile",
     "make_result",
 ]
+
+
+class StubHTTPServer:
+    """Tiny scriptable HTTP server for provider tests (no network egress).
+
+    Queue responses with ``queue(...)``; each POST pops one (the last repeats).
+    GET always answers 200 {} (Ollama's /api/tags availability probe).
+    """
+
+    def __init__(self) -> None:
+        self._queue: list[tuple[int, object]] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args: object) -> None:  # silence test output
+                pass
+
+            def do_GET(self) -> None:
+                self._send(200, b"{}")
+
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                if outer._queue:
+                    status, body = outer._queue.pop(0)
+                else:
+                    status, body = 500, {"error": "no scripted response"}
+                payload = (
+                    json.dumps(body).encode("utf-8")
+                    if isinstance(body, (dict, list))
+                    else str(body).encode("utf-8")
+                )
+                self._send(status, payload)
+
+            def _send(self, status: int, payload: bytes) -> None:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        self._server = HTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}"
+
+    def queue(self, body: object, status: int = 200) -> None:
+        self._queue.append((status, body))
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+@pytest.fixture()
+def stub_server() -> object:
+    server = StubHTTPServer()
+    yield server
+    server.close()
+
+
+class FakeProvider:
+    """Scripted in-memory provider for planner/router tests (no HTTP at all)."""
+
+    def __init__(
+        self,
+        replies: Sequence[str] | None = None,
+        *,
+        name: str = "fake",
+        model: str = "fake-model",
+        raise_on_complete: Exception | None = None,
+    ) -> None:
+        self._replies = list(replies or [])
+        self.name = name
+        self.model = model
+        self.raise_on_complete = raise_on_complete
+        self.calls: list[tuple[str, str]] = []
+
+    def available(self) -> bool:
+        return True
+
+    def complete(self, system: str, user: str, *, timeout_s: float = 90.0) -> str:
+        self.calls.append((system, user))
+        if self.raise_on_complete is not None:
+            raise self.raise_on_complete
+        if not self._replies:
+            return "{}"
+        return self._replies.pop(0)
+
+
+__all__ = ["FakeProvider", "StubHTTPServer", "TaskStatus", "make_profile", "make_result"]

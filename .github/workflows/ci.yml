@@ -34,3 +34,6 @@ jobs:
 
       - name: Tests
         run: pytest
+
+      - name: Planner eval (M2, scripted LLM)
+        run: python evals/harness/m2_eval.py --catalog evals/catalog/m2.json --results evals/results/m2-ci.json

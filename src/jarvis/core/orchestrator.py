@@ -234,6 +234,158 @@ class Orchestrator:
             error=error,
         )
 
+    def run_plan(
+        self,
+        request: str,
+        parts: Sequence[tuple[Playbook, dict[str, object]]],
+        *,
+        explanation: str = "",
+        provider_label: str = "llm",
+        dry_run: bool = False,
+    ) -> TaskOutcome:
+        """Execute a validated multi-part plan (LLM-proposed, kernel-disposed).
+
+        Parts are (playbook, params) pairs already normalized by the planner;
+        building them here re-applies every deterministic check. One composite
+        journal task; the undo reverses parts last-first.
+        """
+        if not parts:
+            return TaskOutcome(playbook_id="plan", status=TaskStatus.REFUSED, error="empty plan")
+        all_steps: list[PlannedStep] = []
+        slices: list[tuple[int, int]] = []
+        for idx, (playbook, params) in enumerate(parts, 1):
+            try:
+                steps = playbook.build(params, self._profile)
+            except UnsupportedError as exc:
+                return TaskOutcome(
+                    playbook_id="plan",
+                    status=TaskStatus.FAILED,
+                    error=f"part {idx} ({playbook.id}) unsupported on this machine: {exc}",
+                )
+            except InvalidInputError as exc:
+                return TaskOutcome(
+                    playbook_id="plan",
+                    status=TaskStatus.REFUSED,
+                    error=f"plan part {idx} ({playbook.id}): invalid input: {exc}",
+                )
+            except SafetyRefusal as exc:
+                return TaskOutcome(
+                    playbook_id="plan",
+                    status=TaskStatus.REFUSED,
+                    error=f"plan part {idx} ({playbook.id}): {exc}",
+                )
+            slices.append((len(all_steps), len(all_steps) + len(steps)))
+            all_steps.extend(steps)
+        for step in all_steps:
+            try:
+                check_argv(step.argv)
+            except SafetyRefusal as exc:
+                return TaskOutcome(
+                    playbook_id="plan",
+                    status=TaskStatus.REFUSED,
+                    error=f"static safety check failed: {exc}",
+                )
+
+        undo_plan = _composite_undo(
+            [playbook.undo(params, self._profile) for playbook, params in parts],
+            [playbook.id for playbook, _ in parts],
+        )
+        tier = max(int(s.tier) for s in all_steps)
+
+        if dry_run:
+            if self._echo:
+                print("[dry-run] plan (nothing executed, nothing journaled):")
+                if explanation:
+                    print(f"  explanation: {explanation}")
+                for i, step in enumerate(all_steps, 1):
+                    print(f"  {i}. {step.description}\n       $ {' '.join(step.argv)}")
+                extra = f" \u2014 {undo_plan.reason}" if undo_plan.reason else ""
+                print(f"  undo: {undo_plan.status.value}{extra}")
+            return TaskOutcome(
+                playbook_id="plan",
+                status=TaskStatus.DRY_RUN,
+                tier=tier,
+                undo_status=undo_plan.status,
+                undo_reason=undo_plan.reason,
+                steps=[_step_summary(i, s) for i, s in enumerate(all_steps)],
+            )
+
+        try:
+            self._policy.decide(Tier(max(int(s.tier) for s in all_steps)), all_steps)
+        except ApprovalRefused as exc:
+            task_id = _new_task_id()
+            self._journal.begin_task(
+                task_id,
+                request[:300],
+                f"plan/{provider_label}",
+                tier,
+                {
+                    "intents": [playbook.id for playbook, _ in parts],
+                    "explanation": explanation[:200],
+                },
+                self._profile.to_dict(),
+            )
+            self._journal.finish_task(task_id, TaskStatus.REFUSED.value)
+            return TaskOutcome(
+                playbook_id="plan",
+                status=TaskStatus.REFUSED,
+                task_id=task_id,
+                tier=tier,
+                error=str(exc),
+            )
+
+        task_id = _new_task_id()
+        self._journal.begin_task(
+            task_id,
+            request[:300],
+            f"plan/{provider_label}",
+            tier,
+            {
+                "intents": [playbook.id for playbook, _ in parts],
+                "explanation": explanation[:200],
+            },
+            self._profile.to_dict(),
+        )
+
+        results, terminal = self._execute(task_id, all_steps)
+        verification: Verification | None = None
+        error = self._last_error
+        if terminal is None:
+            checks: list[tuple[str, bool, str]] = []
+            details = []
+            all_ok = True
+            for (playbook, params), (a, b) in zip(parts, slices, strict=True):
+                part_v = playbook.verify(params, self._profile, self._runner, results[a:b])
+                all_ok = all_ok and part_v.ok
+                checks.extend(part_v.checks)
+                details.append(part_v.detail)
+            verification = Verification(
+                ok=all_ok, detail="; ".join(details)[:400], checks=tuple(checks)
+            )
+            terminal = TaskStatus.SUCCEEDED if all_ok else TaskStatus.FAILED
+            if not all_ok:
+                error = f"verification failed: {verification.detail}"
+
+        if (
+            tier >= int(Tier.T1)
+            and undo_plan.status is UndoStatus.AVAILABLE
+            and terminal in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.INTERRUPTED)
+        ):
+            self._journal.store_undo(task_id, _undo_payload(undo_plan))
+        self._journal.finish_task(task_id, terminal.value)
+
+        return TaskOutcome(
+            task_id=task_id,
+            playbook_id="plan",
+            status=terminal,
+            tier=tier,
+            steps=self._journal.steps_for_task(task_id),
+            verification=verification,
+            undo_status=undo_plan.status,
+            undo_reason=undo_plan.reason,
+            error=error,
+        )
+
     # -- undo --------------------------------------------------------------
     def undo(self, original_task_id: str, *, dry_run: bool = False) -> TaskOutcome:
         if not _TASK_ID_RE.match(original_task_id):
@@ -499,6 +651,30 @@ def _undo_payload(plan: UndoPlan) -> dict[str, object]:
             for c in plan.verify_checks
         ],
     }
+
+
+def _composite_undo(undos: Sequence[UndoPlan], labels: Sequence[str]) -> UndoPlan:
+    """Combine per-part undo plans; a part without a reverse path poisons all."""
+    for label, undo in zip(labels, undos, strict=True):
+        if undo.status is UndoStatus.UNAVAILABLE:
+            return UndoPlan(
+                status=UndoStatus.UNAVAILABLE,
+                reason=f"part {label!r} cannot be reversed automatically: {undo.reason}",
+            )
+    steps: list[PlannedStep] = []
+    checks: list[CheckSpec] = []
+    for undo in reversed(undos):
+        if undo.status is UndoStatus.AVAILABLE:
+            steps.extend(undo.steps)
+            checks.extend(undo.verify_checks)
+    if not steps:
+        return UndoPlan(status=UndoStatus.NONE_NEEDED, reason="read-only plan")
+    return UndoPlan(
+        status=UndoStatus.AVAILABLE,
+        reason="reverses executed parts last-first",
+        steps=tuple(steps),
+        verify_checks=tuple(checks),
+    )
 
 
 def _rebuild_undo_steps(

@@ -19,6 +19,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [0.2.0] - 2026-09-02 — M2 LLM planner & router
+
+### Added
+- **Provider abstraction** (`src/jarvis/providers/`): stdlib-`urllib` backends for local **Ollama** (JSON mode, temperature 0, availability probe) and any **OpenAI-compatible** endpoint (opt-in key via `JARVIS_OPENAI_API_KEY`, base URL/model configurable) — no provider SDKs, keys from env only (ADR-0007).
+- **Router** (`providers/router.py`): deterministic engine first (LLM never consulted on playbook matches — eval-asserted at 0 requests), then local Ollama, then remote if configured and not disabled (`JARVIS_REMOTE_LLM=0` disables only the remote fallback), else honest refusal with setup hint.
+- **LLM planner** (`planner/llm.py`): strict JSON contract (`{"explanation", "steps"}` of natural-language intents); every step must pass the deterministic playbook matchers — invalid JSON, out-of-vocabulary, injection-shaped, or oversized proposals are **refused, never guessed** (ADR-0007 "the LLM proposes, the kernel disposes").
+- **Composite plan execution** (`Orchestrator.run_plan`): multi-part plans with per-part post-condition verification, one journal task (`plan/<provider>`), tier gate on the maximum step tier, and **composite undo applied last-first**; a part without a reverse path (e.g. upgrade) marks the plan's undo honestly unavailable.
+- **CLI**: `jarvis ask` (one-shot engine+planner with `--dry-run`) and `jarvis chat` (interactive REPL: `/status`, `/playbooks`, `/tasks [n]`, `/undo <id>`, `/help`); `jarvis status` now reports planning-backend availability.
+- **M2 eval** (`evals/harness/m2_eval.py` + `evals/catalog/m2.json`): 9 deterministic cases against a scripted local LLM stub — routing (0-LLM fast path), schema validity of proposals, injection/malformed/empty refusals, provider-outage honesty, no-backend guidance. Wired into CI; **9/9 required**.
+- Tests: +38 (provider HTTP behavior on real sockets via stub server, planner validation branches, composite plan lifecycle incl. poisoned undo, CLI routing incl. remote-fallback). Total suite: **231 unit + 4 live**.
+
+### Changed
+- Package version 0.2.0; ADR-0007 records the planner architecture and the deliberate deferral of Textual/Pydantic (stdlib REPL + strict hand-rolled validation suffice for the fixed schema).
+
 ## [0.1.0] - 2026-09-02 — M1 Kernel
 
 ### Added
