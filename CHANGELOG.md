@@ -19,6 +19,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [1.0.0] - 2026-09-02 — M6 Production hardening & packaging
+
+### Added
+- **Packaging** (ADR-0011): wheel + sdist (`jarvis-agent`), self-contained `.deb` (real dpkg lifecycle verified: install → run → remove), `.rpm` spec (built+installed in fedora CI container), AUR `PKGBUILD` (makepkg+pacman verified in arch CI container); all native packages unpack the wheel to `/usr/share/jarvis/lib` + `/usr/bin/jarvis` shim, depend only on `python3 >= 3.10`.
+- **KB ships in the package** (`jarvis/knowledge/data/` via `importlib.resources`) — fixes a P1: the KB previously resolved against the repo root and vanished in installed wheels; clean-venv install proven; install harness greps for the KB on every distro.
+- **Install matrix** (`packaging.yml`): every push builds artifacts and install-tests them on clean containers of all five Tier-1 distros (debian-12, ubuntu-24.04, fedora, arch, alpine) with a KB smoke.
+- **Release pipeline** (`release.yml`): tag `v*` → artifacts + clean-venv smoke → draft GitHub Release; PyPI publishing manual and owner-only; `workflow_dispatch` on CI, container-eval, packaging, release for on-demand fresh VMs.
+- **Docs**: `INSTALL.md` (per-distro install story), `docs/RELEASING.md` (owner release runbook).
+
+### Changed
+- **Distribution rename**: `jarvis-linux` → **`jarvis-agent`** (import package and `jarvis` command unchanged; metadata test guards the new name).
+- **Telemetry: none** (owner decision pending; nothing added).
+
 ## [0.5.0] - 2026-09-02 — M5 GUI control
 
 ### Added

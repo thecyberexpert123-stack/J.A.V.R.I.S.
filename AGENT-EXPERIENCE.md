@@ -110,3 +110,14 @@ One entry per milestone or significant event; newest at the bottom. Written hone
 - **T3 refused-by-policy shaped a safety decision:** window close is a graceful WM delete (apps keep their save prompts), so it is T2 with explicit data-loss disclosure rather than a fake "destructive" tier. Honest classification beats theatrical gating.
 - **Verified (real runs):** ruff lint+format clean; mypy clean (41 files); **~327 unit + 9 live tests**; headless GUI eval 4/4; full suite + M2 9/9 + M3 35/0 + M4 12/0-unverifiable re-verified locally; 15-task X lane in CI.
 - **Not verified (honest):** real Wayland sessions (GNOME/KDE/Hyprland) — wizard checks and backends are fixture-verified only; AT-SPI tree content on a real desktop; `gui describe` against a real vision model. All documented in REPORT-m5 §4.
+
+---
+
+## 2026-09-02 · M6 implemented: packaging that gets tested the way users install
+
+- **The P1 was a path that only works in a repo.** The KB loaded via `Path(__file__).parents[3]` — fine in a checkout, silently broken in any wheel (site-packages layout differs). Classic packaging rot, caught by an M6 audit, not by a user. Fix: ship data inside the package (`importlib.resources`) and **prove it in a clean venv with `--no-index`** — then make every distro's install test grep for a KB fact so it can never regress silently. The acceptance test must test what the user actually runs.
+- **Names normalize; test the normalized form.** `J.A.V.R.I.S.` became the unusable distribution name `jarvis-linux`. Renamed to `jarvis-agent` before 1.0.0 (last responsible moment), and the metadata unit test now pins the new name. Stale dist-info from the old name haunted one test run — when a package name changes, clean the old metadata too.
+- **Native packages don't need magic.** deb/rpm/PKGBUILD all unpack the same wheel to `/usr/share/jarvis/lib` with a PYTHONPATH shim: zero runtime deps means zero dependency hell, no pip-in-postinst, nothing fetched at install time. The deb lifecycle was verified for real in this sandbox (dpkg -i → run → dpkg -r); rpm and PKGBUILD were verified *in their native distro containers* in CI — use each distro's own toolchain, not an approximation.
+- **Honest capability boundaries, again:** the agent's installation-scoped token cannot create releases or trigger workflow_dispatch — so the release workflow is tag-driven (owner cuts tags; CI drafts the release with runner credentials) and dispatch lanes are documented for the owner. Design the pipeline around verified permissions, not assumed ones.
+- **Verified (real runs):** clean-venv wheel install with KB smoke (local + CI); deb lifecycle in this sandbox; 5-distro native-artifact install matrix in CI; ruff/mypy/pytest/lives + all prior milestone gates re-verified; CHANGELOG complete (0.0.1→1.0.0).
+- **Open by design:** LICENSE (owner-reserved), PyPI/AUR publication (owner), merge to main (owner-only). The agent opened the milestone PR and stopped there.

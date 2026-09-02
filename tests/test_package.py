@@ -9,7 +9,7 @@ import re
 
 import jarvis
 
-DIST_NAME = "jarvis-linux"
+DIST_NAME = "jarvis-agent"
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 

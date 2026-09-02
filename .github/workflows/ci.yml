@@ -4,6 +4,7 @@ on:
   push:
     branches: ["main", "arena/**"]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   gates:

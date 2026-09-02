@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M5 GUI` (v0.5.0) — engine + LLM planner + cited knowledge + capability-matrix GUI control behind a fault-tested safety kernel. Eval-verified on 5 distros; 15-task GUI suite on real X in CI. Reports: `evals/results/`.**
+**Status: `v1.0.0 — MILESTONE SERIES COMPLETE` (M0–M6): engine + LLM planner + safety kernel + cited knowledge + GUI control, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Reports: `evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |

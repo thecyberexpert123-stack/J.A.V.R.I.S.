@@ -1,0 +1,79 @@
+#!/bin/sh
+# Install-test harness: runs INSIDE a Tier-1 distro container (ADR-0011).
+# Installs the packaging artifact native to the distro from /repo/dist,
+# smoke-tests the CLI, prints an eval-annotation-compatible PASS/FAIL line.
+#
+# Usage: install_test.sh <distro-name>   (debian-12|ubuntu-24.04|fedora|arch|alpine)
+set -u
+
+DISTRO="${1:?usage: install_test.sh <distro-name>}"
+DIST="/repo/dist"
+STATE_DIR="${JARVIS_STATE_DIR:-/tmp/jarvis-install-state}"
+
+fail() {
+    echo "install-test :: FAIL $DISTRO: $1"
+    exit 1
+}
+
+smoke() {
+    export JARVIS_STATE_DIR="$STATE_DIR"
+    command -v jarvis >/dev/null || fail "jarvis not on PATH after install"
+    VERSION="$(jarvis --version)" || fail "jarvis --version failed"
+    case "$VERSION" in
+        jarvis\ *) : ;;
+        *) fail "unexpected version output: $VERSION" ;;
+    esac
+    jarvis --json explain "what is the kernel type" > "$STATE_DIR/answer.json" 2>/dev/null \
+        || fail "explain failed"
+    grep -q '"fact_id": "kernel.ostype"' "$STATE_DIR/answer.json" \
+        || fail "knowledge base missing from install (packaging bug)"
+    echo "install-test :: PASS $DISTRO ($VERSION; KB shipped in package)"
+}
+
+mkdir -p "$STATE_DIR"
+
+case "$DISTRO" in
+    debian-12|ubuntu-24.04)
+        apt-get update -qq || fail "apt-get update"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y "$DIST"/jarvis-agent_*_all.deb \
+            >/dev/null || fail "apt install of .deb"
+        smoke
+        ;;
+    fedora)
+        dnf install -y rpm-build unzip >/dev/null || fail "rpm-build install"
+        RPMB="$(mktemp -d)"
+        mkdir -p "$RPMB/SOURCES" "$RPMB/SPECS" "$RPMB/RPMS"
+        cp "$DIST"/jarvis_agent-*_py3-none-any.whl \
+            "$RPMB/SOURCES/jarvis-agent-1.0.0-py3-none-any.whl" || fail "wheel copy"
+        sed "s/^Version:.*/Version: 1.0.0/" /repo/packaging/rpm/jarvis-agent.spec \
+            > "$RPMB/SPECS/jarvis-agent.spec"
+        rpmbuild -bb --define "_topdir $RPMB" "$RPMB/SPECS/jarvis-agent.spec" \
+            > "$RPMB/build.log" 2>&1 || { tail -20 "$RPMB/build.log"; fail "rpmbuild"; }
+        dnf install -y "$RPMB"/RPMS/noarch/jarvis-agent-*.rpm >/dev/null \
+            || fail "dnf install of .rpm"
+        smoke
+        ;;
+    arch)
+        pacman -Syu --noconfirm --needed base-devel unzip >/dev/null 2>&1 \
+            || fail "base-devel install"
+        WORK="$(mktemp -d)"
+        cp /repo/packaging/arch/PKGBUILD "$WORK/PKGBUILD"
+        # local-file source so makepkg needs no published release yet
+        sed -i "s#^source=.*#source=(\"jarvis_agent-1.0.0-py3-none-any.whl\")#" "$WORK/PKGBUILD"
+        cp "$DIST"/jarvis_agent-1.0.0-py3-none-any.whl "$WORK/" || fail "wheel copy"
+        (cd "$WORK" && makepkg -f --noconfirm >build.log 2>&1) \
+            || { tail -20 "$WORK/build.log"; fail "makepkg"; }
+        pacman -U --noconfirm "$WORK"/jarvis-agent-1.0.0-1-any.pkg.tar.zst >/dev/null \
+            || fail "pacman -U"
+        smoke
+        ;;
+    alpine)
+        apk add --no-cache python3 py3-pip >/dev/null || fail "python3/pip install"
+        PIP_BREAK_SYSTEM_PACKAGES=1 pip install --quiet --break-system-packages \
+            "$DIST"/jarvis_agent-*_py3-none-any.whl || fail "pip install of wheel"
+        smoke
+        ;;
+    *)
+        fail "unknown distro: $DISTRO"
+        ;;
+esac

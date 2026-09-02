@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from importlib import resources
+from importlib.abc import Traversable
 from pathlib import Path
-
-KB_DIR = Path(__file__).resolve().parents[3] / "knowledge"
 
 _REQUIRED_SOURCE_FIELDS = ("kind", "ref")
 _VERIFIER_KINDS = ("file_equals", "file_exists", "os_release_field", "binary_present", "command_ok")
@@ -19,6 +19,13 @@ _VERIFIER_KINDS = ("file_equals", "file_exists", "os_release_field", "binary_pre
 
 class KnowledgeError(ValueError):
     """The KB on disk violates its schema (curation defect, fail loudly)."""
+
+
+def _kb_files() -> list[Traversable]:
+    """KB files ship inside the package (ADR-0011); sorted by name for determinism."""
+    root = resources.files("jarvis.knowledge") / "data"
+    files = [path for path in root.iterdir() if path.name.endswith(".json")]
+    return sorted(files, key=lambda path: path.name)
 
 
 @dataclass(frozen=True)
@@ -92,14 +99,13 @@ def _parse_fact(raw: object) -> Fact:
 
 
 def load_kb(kb_dir: Path | None = None) -> KnowledgeBase:
-    """Load and validate every knowledge/*.json file in the repo."""
-    directory = kb_dir if kb_dir is not None else KB_DIR
+    """Load and validate every knowledge/*.json file shipped with the package."""
+    files = sorted(kb_dir.glob("*.json")) if kb_dir is not None else _kb_files()
     facts: list[Fact] = []
     version: int | None = None
     seen: set[str] = set()
-    files = sorted(directory.glob("*.json"))
     if not files:
-        raise KnowledgeError(f"no knowledge files found in {directory}")
+        raise KnowledgeError("no knowledge files found in the package")
     for path in files:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or "facts" not in data:
@@ -120,9 +126,8 @@ def load_kb(kb_dir: Path | None = None) -> KnowledgeBase:
             seen.add(fact.id)
             facts.append(fact)
     assert version is not None
-    return KnowledgeBase(
-        version=version, facts=tuple(facts), origin=f"{directory} ({len(files)} files)"
-    )
+    origin = f"{kb_dir} ({len(files)} files)" if kb_dir else f"package data ({len(files)} files)"
+    return KnowledgeBase(version=version, facts=tuple(facts), origin=origin)
 
 
 def match_fact(question: str, kb: KnowledgeBase) -> Fact | None:

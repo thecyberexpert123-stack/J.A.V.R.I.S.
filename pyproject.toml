@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 # Distribution name avoids the (near-certain) PyPI collision of bare "jarvis";
 # the importable Python package is `jarvis` (see ADR-0004).
-name = "jarvis-linux"
-version = "0.5.0"
+name = "jarvis-agent"
+version = "1.0.0"
 description = "JARVIS (Just A Rather Very Intelligent System) - a verified, safety-kernelled automation agent for Linux."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +46,9 @@ Homepage = "https://github.com/thecyberexpert123-stack/J.A.V.R.I.S."
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"jarvis.knowledge" = ["data/*.json"]
 
 [tool.ruff]
 line-length = 100
