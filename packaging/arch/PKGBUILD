@@ -14,7 +14,8 @@ sha256sums=('SKIP')  # replace with the release artifact's sha256 before publish
 
 package() {
     install -d "$pkgdir/usr/share/jarvis/lib" "$pkgdir/usr/bin"
-    unzip -q "$srcdir/$pkgname-$pkgver-py3-none-any.whl" -d "$pkgdir/usr/share/jarvis/lib"
+    WHEEL="$(ls "$srcdir"/jarvis_agent-*.whl | head -n1)"
+    unzip -q "$WHEEL" -d "$pkgdir/usr/share/jarvis/lib"
     cat > "$pkgdir/usr/bin/jarvis" <<'SH'
 #!/bin/sh
 exec env PYTHONPATH="/usr/share/jarvis/lib${PYTHONPATH:+:$PYTHONPATH}" \
