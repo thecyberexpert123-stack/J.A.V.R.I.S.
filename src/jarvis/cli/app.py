@@ -497,7 +497,7 @@ def _build_gui(args: argparse.Namespace) -> GuiService:
     journal = Journal(default_db_path())
     runner = LocalRunner()
     policy = ApprovalPolicy(yes=args.yes, silent=bool(args.json))
-    return GuiService(runner, policy, journal)
+    return GuiService(runner, policy, journal, echo=not args.json)
 
 
 def build_parser() -> argparse.ArgumentParser:

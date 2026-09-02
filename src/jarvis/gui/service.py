@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from jarvis.execution.runner import Runner
+from jarvis.execution.runner import ExecResult, Runner
 from jarvis.gui import backends
 from jarvis.gui.atspi import desktop_window_titles
 from jarvis.gui.backends import GuiBackendError, Window
@@ -33,6 +33,36 @@ MAX_TEXT_CHARS = 500
 MAX_COMBO_CHARS = 40
 
 _WmRunner = Callable[[Runner], object]
+
+
+class _QuietRunner(Runner):
+    """Wraps a runner to suppress stdout echoing (JSON-mode purity)."""
+
+    def __init__(self, inner: Runner) -> None:
+        self._inner = inner
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        requires_root: bool = False,
+        timeout_s: float = 300.0,
+        extra_env: Mapping[str, str] | None = None,
+        echo: bool = True,
+        stdin_text: str = "",
+    ) -> ExecResult:
+        del echo
+        return self._inner.run(
+            argv,
+            requires_root=requires_root,
+            timeout_s=timeout_s,
+            extra_env=extra_env,
+            echo=False,
+            stdin_text=stdin_text,
+        )
+
+    def terminate_current(self) -> None:
+        self._inner.terminate_current()
 
 
 class GuiUnavailable(RuntimeError):
@@ -100,8 +130,9 @@ class GuiService:
         journal: Journal,
         env: Mapping[str, str] | None = None,
         which_fn: Callable[[str], str | None] | None = None,
+        echo: bool = True,
     ) -> None:
-        self._runner = runner
+        self._runner: Runner = runner if echo else _QuietRunner(runner)
         self._approval = approval
         self._journal = journal
         self._env = dict(env) if env is not None else None

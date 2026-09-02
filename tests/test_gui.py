@@ -537,3 +537,66 @@ def test_cli_gui_wizard_json(
     assert main(["--json", "gui", "wizard"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert any(c["name"] == "ydotool binary" for c in data)
+
+
+def test_service_quiet_runner_keeps_stdout_pure(journal: Journal) -> None:
+    """--json mode: no runner echo lines may pollute stdout (CI bug found by m5 eval)."""
+
+    class EchoSpy(FakeRunner):
+        def run(self, argv, **kwargs):  # type: ignore[no-untyped-def]
+            assert kwargs.get("echo") is False, "service must suppress echo in JSON mode"
+            return super().run(argv, **kwargs)
+
+    service = GuiService(
+        EchoSpy(
+            script=[
+                (("scrot", "-o", "-q", "90", "/tmp/x.png"), _result()),
+            ]
+        ),
+        ApprovalPolicy(yes=True),
+        journal,
+        env={"DISPLAY": ":0"},
+        which_fn=_which(("scrot",)),
+        echo=False,
+    )
+    service.screenshot(Path("/tmp/x.png"))
+    assert service._runner.__class__.__name__ == "_QuietRunner"
+
+
+def test_i3_tree_skips_dockarea_bars() -> None:
+    tree = {
+        "id": 1,
+        "name": "root",
+        "type": "root",
+        "nodes": [
+            {
+                "id": 2,
+                "type": "dockarea",
+                "name": "i3bar for output screen",
+                "window": 999,
+                "nodes": [],
+                "floating_nodes": [],
+            },
+            {
+                "id": 3,
+                "type": "workspace",
+                "name": "1",
+                "nodes": [
+                    {
+                        "id": 4,
+                        "type": "con",
+                        "window": 111,
+                        "name": "xterm — real",
+                        "focused": True,
+                        "nodes": [],
+                        "floating_nodes": [],
+                    },
+                ],
+                "floating_nodes": [],
+            },
+        ],
+        "floating_nodes": [],
+    }
+    runner = FakeRunner(script=[(("i3-msg", "-t", "get_tree"), _result(json.dumps(tree)))])
+    windows = backends.i3_list(runner)
+    assert [w.title for w in windows] == ["xterm — real"]

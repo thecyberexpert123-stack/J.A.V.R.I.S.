@@ -79,6 +79,8 @@ def scrot_screenshot(runner: Runner, path: str) -> None:
 def _walk_i3_tree(node: object, out: list[Window], backend: str) -> None:
     if not isinstance(node, dict):
         return
+    if node.get("type") == "dockarea":
+        return  # i3bar and tray containers are not user windows
     if node.get("window") is not None and not node.get("nodes") and node.get("name"):
         out.append(
             Window(
