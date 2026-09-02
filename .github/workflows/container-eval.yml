@@ -32,6 +32,7 @@ jobs:
           docker run --rm \
             -v "$PWD":/repo -w /repo \
             -e JARVIS_STATE_DIR=/tmp/jarvis-eval-state \
+            -e GITHUB_ACTIONS=true -e CI=true \
             ${{ matrix.distro }} \
             sh evals/harness/run_in_container.sh "${{ matrix.name }}"
 
