@@ -42,6 +42,8 @@ def _print_outcome(outcome: TaskOutcome) -> None:
         print(f"undo     : {outcome.undo_status.value}{extra}")
     if outcome.undo_status is None and outcome.playbook_id not in ("undo", "<unmatched>"):
         print("undo     : not applicable (read-only)")
+    if outcome.snapshot_note:
+        print(f"snapshot : {outcome.snapshot_note}")
     if outcome.error:
         print(f"error    : {outcome.error}", file=sys.stderr)
     if outcome.hint:
@@ -271,6 +273,26 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         _print_outcome(_ask_flow(orch, args, line))
 
 
+def _cmd_file(args: argparse.Namespace) -> int:
+    orch, _journal = _build_orchestrator(args)
+    playbook = next((pb for pb in PLAYBOOKS if pb.id == "file.append"), None)
+    if playbook is None:  # pragma: no cover - registry constant
+        print("error: file.append playbook missing", file=sys.stderr)
+        return 2
+    text = " ".join(args.text)
+    outcome = orch.run_plan(
+        f"[file] append to {args.path}",
+        [(playbook, {"path": args.path, "text": text})],
+        provider_label="cli:file",
+        dry_run=args.dry_run,
+    )
+    if args.json:
+        print(json.dumps(outcome.to_json_dict(), indent=2))
+    else:
+        _print_outcome(outcome)
+    return outcome.exit_code()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -316,6 +338,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_chat = sub.add_parser("chat", help="interactive chat (engine + planner)")
     p_chat.set_defaults(func=_cmd_chat)
+
+    p_file = sub.add_parser("file", help="guarded single-line file edits (ADR-0008)")
+    p_file_sub = p_file.add_subparsers(dest="file_command", required=True)
+    p_file_append = p_file_sub.add_parser(
+        "append", help="append one line; a backup is taken and undo restores it"
+    )
+    p_file_append.add_argument("path", help="absolute target path (~ allowed)")
+    p_file_append.add_argument("text", nargs="+", help="single-line text to append")
+    p_file_append.add_argument("--dry-run", action="store_true")
+    p_file_append.set_defaults(func=_cmd_file)
 
     return parser
 

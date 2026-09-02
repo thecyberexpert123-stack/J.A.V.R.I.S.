@@ -41,7 +41,21 @@ _UNIT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:@._-]*$")
 
 # Programs JARVIS must never be the one to invoke directly (argv[0]).
 _DANGEROUS_PROGRAMS: frozenset[str] = frozenset(
-    {"shutdown", "halt", "poweroff", "reboot", "init", "telinit", "dd", "mkfs"}
+    {
+        "shutdown",
+        "halt",
+        "poweroff",
+        "reboot",
+        "init",
+        "telinit",
+        "dd",
+        "mkfs",
+        "wipefs",
+        "parted",
+        "fdisk",
+        "gdisk",
+        "sgdisk",
+    }
 )
 
 # Patterns for shell content (a `-c` argument or a space-joined argv scan).
@@ -59,6 +73,8 @@ _UNCONDITIONAL_BLOCKED: tuple[re.Pattern[str], ...] = tuple(
         r"(?:^|\s)(?:curl|wget)\s+[^;|&]*\|\s*(?:sudo\s+)?(?:ba)?sh\b",
         r">\s*/etc/(?:passwd|shadow|sudoers)\b",
         r"(?:^|\s)umask\s+000(?:\s|$)",
+        r"\|\s*(?:sudo\s+)?(?:ba|z)?sh\b",  # any pipe into a shell
+        r"(?:^|\s)chmod\s+777\s+/(?:\s|$)",
     )
 )
 

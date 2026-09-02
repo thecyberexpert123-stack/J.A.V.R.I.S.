@@ -19,6 +19,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [0.3.0] - 2026-09-02 — M3 Safety hardening
+
+### Added
+- **Snapshot preflight** (`safety/snapshots.py`): best-effort snapper/timeshift snapshot before every T2+ task, journaled per task (`task_meta`), surfaced in CLI output; honest degradation (never blocks; says exactly what protection exists). Restore stays manual by design (ADR-0008).
+- **File edits with real backups**: `file.append` playbook + `jarvis file append <path> <text>` — pre-edit backup into the state dir (hash-addressed, mode-preserving `cp -p`), argv-only execution (`tee -a` via new runner `stdin_text` support), undo restores byte-identical content (or removes created files). Path policy (`safety/paths.py`): symlink-resolving checks; auth material (`passwd`/`shadow`/`sudoers`) and `/boot`/`/proc`/`/sys`/`/dev` refused outright; `/etc`,`/usr`,`/var`,`/opt`,`/srv` require T2 consent.
+- **Dynamic tier elevation**: effective task tier is now computed from built steps (file edits under system paths are gated as T2 even though the playbook's registry tier is T1).
+- **Blocklist hardening**: `wipefs`/`parted`/`fdisk`/`gdisk`/`sgdisk` refused as argv[0]; generic pipe-to-shell (`| sh`, `| bash`, sudo variants); `chmod 777 /`.
+- **Injected-fault gate** (`tests/test_fault_injection.py` + `evals/harness/m3_faults.py` in CI): 35 adversarial vectors across 9 ingresses — **0 escapes**. The suite caught a real gap during development: tampered undo artifacts could reach `/etc/shadow` via `tee`; undo replay now re-applies the file-path policy to `tee`/`cp`/`rm`/`truncate` operands.
+- **First published consolidated eval report**: `evals/results/REPORT-m3.md` (M1 70/70 containers · M2 9/9 planner · M3 fault gate 35/0 · rollback evidence).
+- Rollback integration tests on real files (byte-identical restore; created-file removal); live Ollama smoke test (skips honestly when no backend).
+
+### Changed
+- Package version 0.3.0; journal gains a `task_meta` store (snapshot records); runner supports piped stdin for argv-only editors.
+
 ## [0.2.0] - 2026-09-02 — M2 LLM planner & router
 
 ### Added

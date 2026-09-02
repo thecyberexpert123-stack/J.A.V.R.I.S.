@@ -57,6 +57,7 @@ class Runner:
         timeout_s: float = 300.0,
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
+        stdin_text: str = "",
     ) -> ExecResult:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -101,6 +102,7 @@ class LocalRunner(Runner):
         timeout_s: float = 300.0,
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
+        stdin_text: str = "",
     ) -> ExecResult:
         final = self._prepare_argv(argv, requires_root)
         env = dict(os.environ)
@@ -111,16 +113,21 @@ class LocalRunner(Runner):
             final,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
             start_new_session=True,
             env=env,
         )
         self._current = proc
         if echo:
             print(f"    $ {' '.join(final)}", flush=True)
+            if stdin_text:
+                print(f"        < {stdin_text.rstrip()}", flush=True)
         timed_out = False
         try:
-            out, err = proc.communicate(timeout=timeout_s)
+            out, err = proc.communicate(
+                input=stdin_text.encode("utf-8") if stdin_text else None,
+                timeout=timeout_s,
+            )
         except subprocess.TimeoutExpired:
             timed_out = True
             self._kill_group(proc, signal.SIGTERM)

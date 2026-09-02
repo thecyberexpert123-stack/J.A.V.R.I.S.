@@ -93,3 +93,14 @@ def test_real_cli_module_entry(live_env: Path) -> None:
     data = json.loads(result.stdout)
     assert data["distro_id"] in {"debian", "ubuntu"}  # this host family
     assert data["package_manager"] == "apt"
+
+
+def test_real_ollama_smoke_if_present() -> None:
+    """Real-model smoke: runs only when an Ollama is actually reachable."""
+    from jarvis.providers.ollama import OllamaProvider
+
+    provider = OllamaProvider()
+    if not provider.available():
+        pytest.skip("no Ollama reachable (set OLLAMA_HOST to enable)")
+    reply = provider.complete("Reply with strict JSON only.", 'Return {"ok": true}', timeout_s=30)
+    assert '"ok"' in reply

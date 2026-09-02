@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS undo_artifacts (
     status       TEXT NOT NULL,
     applied_by   TEXT
 );
+CREATE TABLE IF NOT EXISTS task_meta (
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    key     TEXT NOT NULL,
+    value   TEXT NOT NULL,
+    PRIMARY KEY (task_id, key)
+);
 """
 
 
@@ -199,6 +205,19 @@ class Journal:
             "status": row["status"],
             "applied_by": row["applied_by"],
         }
+
+    def set_meta(self, task_id: str, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO task_meta (task_id, key, value) VALUES (?,?,?)",
+            (task_id, key, value),
+        )
+        self._conn.commit()
+
+    def get_meta(self, task_id: str, key: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM task_meta WHERE task_id = ? AND key = ?", (task_id, key)
+        ).fetchone()
+        return None if row is None else str(row["value"])
 
     def mark_undo_applied(self, task_id: str, undo_task_id: str) -> None:
         self._conn.execute(

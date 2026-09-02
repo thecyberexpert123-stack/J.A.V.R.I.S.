@@ -37,3 +37,6 @@ jobs:
 
       - name: Planner eval (M2, scripted LLM)
         run: python evals/harness/m2_eval.py --catalog evals/catalog/m2.json --results evals/results/m2-ci.json
+
+      - name: Fault-injection gate (M3)
+        run: python evals/harness/m3_faults.py --results evals/results/m3-faults-ci.json

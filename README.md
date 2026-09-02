@@ -6,7 +6,7 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `M2 PLANNER` (v0.2.0) — deterministic engine + LLM planner (local Ollama first, OpenAI-compatible opt-in) behind one safety kernel. Eval-verified on 5 distros.**
+**Status: `M3 HARDENED` (v0.3.0) — engine + LLM planner behind a fault-tested safety kernel: snapshots, file-edit backups, 35-vector injection gate (0 escapes), eval-verified on 5 distros. Report: `evals/results/REPORT-m3.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |

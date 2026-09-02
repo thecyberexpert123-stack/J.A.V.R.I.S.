@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from jarvis.execution.runner import ExecResult, Runner
+from jarvis.planner.fileops import _build_append, _match_append, _undo_append, _verify_append
 from jarvis.planner.models import CheckSpec, PlannedStep, UndoPlan, UndoStatus, Verification
 from jarvis.safety.tiers import (
     Tier,
@@ -778,14 +779,32 @@ PLAYBOOKS: tuple[Playbook, ...] = (
         verify=_verify_sysinfo,
         undo=_undo_readonly,
     ),
+    # file.append is built in planner.fileops (breaks an import cycle); its
+    # effective tier is computed from the built steps (T2 for system paths).
+    Playbook(
+        id="file.append",
+        description="append one line to a file (backup taken; undo restores it)",
+        tier=Tier.T1,
+        match=_match_append,
+        build=_build_append,
+        verify=_verify_append,
+        undo=_undo_append,
+    ),
 )
 
 
 def match_intent(text: str) -> tuple[Playbook, Params] | None:
-    """Map normalized text to (playbook, params). None = refuse (never guess)."""
-    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    """Map normalized text to (playbook, params). None = refuse (never guess).
+
+    Package/service intents are matched lowercased (names are case-insensitive
+    there); file intents are matched against the whitespace-collapsed ORIGINAL
+    because Linux paths are case-sensitive.
+    """
+    collapsed = re.sub(r"\s+", " ", text.strip())
+    normalized = collapsed.lower()
     for playbook in PLAYBOOKS:
-        params = playbook.match(normalized)
+        source = collapsed if playbook.id.startswith("file.") else normalized
+        params = playbook.match(source)
         if params is not None:
             return playbook, params
     return None

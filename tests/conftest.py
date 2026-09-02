@@ -45,6 +45,7 @@ class FakeRunner(Runner):
         timeout_s: float = 300.0,
         extra_env: Mapping[str, str] | None = None,
         echo: bool = True,
+        stdin_text: str = "",
     ) -> ExecResult:
         key = tuple(argv)
         self.calls.append((key, requires_root, extra_env))

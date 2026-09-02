@@ -12,8 +12,8 @@ from jarvis.safety.tiers import SafetyRefusal, Tier
 from jarvis.system.models import InvalidInputError, UnsupportedError
 
 
-def test_registry_has_exactly_ten_seed_playbooks() -> None:
-    assert len(PLAYBOOKS) == 10
+def test_registry_has_exactly_eleven_playbooks() -> None:
+    assert len(PLAYBOOKS) == 11
     ids = {pb.id for pb in PLAYBOOKS}
     assert ids == {
         "pkg.install",
@@ -26,6 +26,7 @@ def test_registry_has_exactly_ten_seed_playbooks() -> None:
         "svc.start",
         "svc.enable",
         "sys.info",
+        "file.append",
     }
 
 
@@ -169,6 +170,7 @@ def test_tiers_of_all_playbooks() -> None:
         "svc.start": Tier.T2,
         "svc.enable": Tier.T2,
         "sys.info": Tier.T0,
+        "file.append": Tier.T1,  # registry metadata; steps carry the real tier
     }
     for pb in PLAYBOOKS:
         assert pb.tier is expected[pb.id], pb.id

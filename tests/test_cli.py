@@ -22,11 +22,11 @@ def test_parser_requires_command() -> None:
         build_parser().parse_args([])
 
 
-def test_playbooks_json_lists_ten(capsys: pytest.CaptureFixture[str]) -> None:
+def test_playbooks_json_lists_all(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--json", "playbooks"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert len(data) == 10
-    assert {entry["id"] for entry in data} >= {"pkg.install", "sys.info"}
+    assert len(data) == 11
+    assert {entry["id"] for entry in data} >= {"pkg.install", "sys.info", "file.append"}
 
 
 def test_playbooks_human_output(capsys: pytest.CaptureFixture[str]) -> None:

@@ -7,6 +7,7 @@ and interrupt handling cannot be bypassed (PLAN §4.1, §4.2).
 
 from __future__ import annotations
 
+import json
 import re
 import signal
 import uuid
@@ -27,6 +28,8 @@ from jarvis.planner.models import (
 )
 from jarvis.planner.playbooks import PLAYBOOKS, Playbook, match_intent
 from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
+from jarvis.safety.paths import classify_for_edit
+from jarvis.safety.snapshots import SnapshotManager
 from jarvis.safety.tiers import SafetyRefusal, Tier, check_argv, check_removal_allowed
 from jarvis.system.models import InvalidInputError, UnsupportedError
 
@@ -60,6 +63,7 @@ class TaskOutcome:
     undo_reason: str = ""
     error: str = ""
     hint: str = ""
+    snapshot_note: str = ""
 
     def exit_code(self) -> int:
         match self.status:
@@ -93,6 +97,7 @@ class TaskOutcome:
             else {"status": self.undo_status.value, "reason": self.undo_reason},
             "error": self.error,
             "hint": self.hint,
+            "snapshot": self.snapshot_note or None,
         }
 
 
@@ -104,12 +109,14 @@ class Orchestrator:
         runner: Runner,
         policy: ApprovalPolicy,
         echo: bool = True,
+        snapshot_manager: SnapshotManager | None = None,
     ) -> None:
         self._profile = profile
         self._journal = journal
         self._runner = runner
         self._policy = policy
         self._echo = echo
+        self._snapshots = snapshot_manager or SnapshotManager(runner)
         self._interrupted = False
         self._prev_handlers: dict[int, object] = {}
         self._last_error = ""
@@ -186,21 +193,21 @@ class Orchestrator:
             return TaskOutcome(
                 playbook_id=playbook.id,
                 status=TaskStatus.DRY_RUN,
-                tier=int(playbook.tier),
+                tier=max(int(playbook.tier), max(int(s.tier) for s in steps)),
                 undo_status=undo_plan.status,
                 undo_reason=undo_plan.reason,
                 steps=[_step_summary(i, s) for i, s in enumerate(steps)],
             )
 
+        tier = max(int(playbook.tier), max(int(s.tier) for s in steps))
         try:
-            self._policy.decide(playbook.tier, steps)
+            self._policy.decide(Tier(tier), steps)
         except ApprovalRefused as exc:
-            return self._refuse_journaled(text, playbook, params, str(exc), steps)
+            return self._refuse_journaled(text, playbook, params, str(exc), steps, tier)
 
         task_id = _new_task_id()
-        self._journal.begin_task(
-            task_id, text, playbook.id, int(playbook.tier), params, self._profile.to_dict()
-        )
+        self._journal.begin_task(task_id, text, playbook.id, tier, params, self._profile.to_dict())
+        snapshot_note = self._preflight_snapshot(task_id, tier, playbook.id)
 
         results, status = self._execute(task_id, steps)
         verification: Verification | None = None
@@ -226,12 +233,13 @@ class Orchestrator:
             task_id=task_id,
             playbook_id=playbook.id,
             status=status,
-            tier=int(playbook.tier),
+            tier=tier,
             steps=self._journal.steps_for_task(task_id),
             verification=verification,
             undo_status=undo_plan.status,
             undo_reason=undo_plan.reason,
             error=error,
+            snapshot_note=snapshot_note,
         )
 
     def run_plan(
@@ -346,6 +354,7 @@ class Orchestrator:
             },
             self._profile.to_dict(),
         )
+        snapshot_note = self._preflight_snapshot(task_id, tier, "plan")
 
         results, terminal = self._execute(task_id, all_steps)
         verification: Verification | None = None
@@ -384,6 +393,7 @@ class Orchestrator:
             undo_status=undo_plan.status,
             undo_reason=undo_plan.reason,
             error=error,
+            snapshot_note=snapshot_note,
         )
 
     # -- undo --------------------------------------------------------------
@@ -521,6 +531,7 @@ class Orchestrator:
                         timeout_s=step.timeout_s,
                         extra_env=step.extra_env,
                         echo=self._echo,
+                        stdin_text=step.stdin_text,
                     )
                 except Exception as exc:
                     self._journal.record_step(
@@ -591,10 +602,12 @@ class Orchestrator:
         params: dict[str, object],
         reason: str,
         steps: Sequence[PlannedStep],
+        tier: int | None = None,
     ) -> TaskOutcome:
+        effective = tier if tier is not None else int(playbook.tier)
         task_id = _new_task_id()
         self._journal.begin_task(
-            task_id, text, playbook.id, int(playbook.tier), params, self._profile.to_dict()
+            task_id, text, playbook.id, effective, params, self._profile.to_dict()
         )
         for seq, step in enumerate(steps):
             self._journal.record_step(
@@ -611,9 +624,21 @@ class Orchestrator:
             task_id=task_id,
             playbook_id=playbook.id,
             status=TaskStatus.REFUSED,
-            tier=int(playbook.tier),
+            tier=effective,
             error=reason,
         )
+
+    def _preflight_snapshot(self, task_id: str, tier: int, label: str) -> str:
+        """Attempt a snapshot for T2+ tasks; always honest, never blocking."""
+        if tier < int(Tier.T2):
+            return ""
+        snap = self._snapshots.create(f"task {task_id}: {label}")
+        self._journal.set_meta(
+            task_id,
+            "snapshot",
+            json.dumps({"status": snap.status, "tool": snap.tool, "detail": snap.detail}),
+        )
+        return snap.note()
 
 
 # --------------------------------------------------------------------------
@@ -735,7 +760,12 @@ def _rebuild_undo_steps(
 
 
 def _revalidate_undo_step(step: PlannedStep) -> None:
-    """Journal files are user-editable: re-apply domain rules to undo argvs."""
+    """Journal files are user-editable: re-apply domain rules to undo argvs.
+
+    Covers both the package-removal protected set and the file-edit path
+    policy (ADR-0008): a tampered artifact cannot smuggle writes to
+    protected files through tee/cp/rm.
+    """
     argv = step.argv
     for prefix in _REMOVE_PREFIXES:
         if tuple(argv[: len(prefix)]) == prefix:
@@ -743,3 +773,12 @@ def _revalidate_undo_step(step: PlannedStep) -> None:
             names = argv[marker + 1 :] if marker >= 0 else ()
             for name in names:
                 check_removal_allowed(name)
+
+    program = argv[0].rsplit("/", 1)[-1]
+    if program in ("tee", "truncate", "rm"):
+        for operand in argv[1:]:
+            if operand.startswith("-"):
+                continue
+            classify_for_edit(operand)  # raises SafetyRefusal on protected paths
+    elif program == "cp" and len(argv) >= 3:
+        classify_for_edit(argv[-1])  # destination
