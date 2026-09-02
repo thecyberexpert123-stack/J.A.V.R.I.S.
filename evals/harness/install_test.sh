@@ -44,7 +44,7 @@ case "$DISTRO" in
         dnf install -y rpm-build unzip >/dev/null || fail "rpm-build install"
         RPMB="$(mktemp -d)"
         mkdir -p "$RPMB/SOURCES" "$RPMB/SPECS" "$RPMB/RPMS"
-        cp "$DIST"/jarvis_agent-*_py3-none-any.whl \
+        cp "$DIST"/jarvis_agent-*.whl \
             "$RPMB/SOURCES/jarvis-agent-1.0.0-py3-none-any.whl" || fail "wheel copy"
         sed "s/^Version:.*/Version: 1.0.0/" /repo/packaging/rpm/jarvis-agent.spec \
             > "$RPMB/SPECS/jarvis-agent.spec"
@@ -61,7 +61,7 @@ case "$DISTRO" in
         cp /repo/packaging/arch/PKGBUILD "$WORK/PKGBUILD"
         # local-file source so makepkg needs no published release yet
         sed -i "s#^source=.*#source=(\"jarvis_agent-1.0.0-py3-none-any.whl\")#" "$WORK/PKGBUILD"
-        cp "$DIST"/jarvis_agent-1.0.0-py3-none-any.whl "$WORK/" || fail "wheel copy"
+        cp "$DIST"/jarvis_agent-*.whl "$WORK/" || fail "wheel copy"
         chown -R nobody:nobody "$WORK"
         # makepkg refuses to run as root — build as nobody, then install as root
         su -s /bin/sh nobody -c "cd $WORK && makepkg -f --noconfirm >build.log 2>&1" \
@@ -73,7 +73,7 @@ case "$DISTRO" in
     alpine)
         apk add --no-cache python3 py3-pip >/dev/null || fail "python3/pip install"
         PIP_BREAK_SYSTEM_PACKAGES=1 pip install --quiet --break-system-packages \
-            "$DIST"/jarvis_agent-*_py3-none-any.whl || fail "pip install of wheel"
+            "$DIST"/jarvis_agent-*.whl || fail "pip install of wheel"
         smoke
         ;;
     *)
