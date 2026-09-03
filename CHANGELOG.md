@@ -19,6 +19,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [1.2.0] - 2026-09-03 — M8a Adaptive initiative: suggestion engine
+
+### Added (ADR-0012 — "proactivity proposes; consent executes")
+- **`jarvis suggest`**: deterministic, evidence-backed suggestions — failed tasks with available undo artifacts (journal evidence), stale package index (>14 days, journal evidence), distro-relevant pitfall briefings (KB-cited with sources). The engine takes **no runner and executes nothing**; accept prints the exact `jarvis …` command for the user to run through the normal consent path.
+- **Feedback ledger** (`jarvis suggest accept|reject <id> [--reason]`): handled suggestions are suppressed from future listings; rejections require a reason (calibration signal); ledger is the seed of the M8b context store.
+- **`jarvis context show`** (+ status line): the local store is inspectable from day one; it tunes suggestions and never grants authority to act.
+- Tests: +14 (rules, evidence, suppression, determinism, read-only invariant, broken-journal resilience, CLI flow). Suite: **370 passed + 2 honest skips**.
+
+### Planned (recorded in ADR-0012, not built yet)
+- M8b context store (preferences/routines/house-rules; inspectable, deletable, local-only), M8c charters (revocable standing orders on systemd timers, journaled, tier-capped), M8d supervised growth loop (KB/playbook proposals as gated PRs).
+
 ## [1.1.0] - 2026-09-02 — M7 Real-machine readiness
 
 ### Added

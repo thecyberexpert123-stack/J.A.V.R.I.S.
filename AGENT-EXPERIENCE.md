@@ -133,3 +133,14 @@ One entry per milestone or significant event; newest at the bottom. Written hone
 - **Auto-rollback reuses undo() end-to-end** — rebuild, revalidation, verification — under the original task's consent (`skip_consent`), because prompting mid-failure strands partial state. The journal keeps the task `failed` + undo marked applied: honest history, no silent re-apply. Ordering: `finish_task` runs after the rollback so rollback bookkeeping isn't clobbered.
 - **The safety battery runs with an execution-blocked sentinel runner** — dry-run plans + consent refusal + a runner that records any execution attempt as a violation. Three independent walls; the self-test itself cannot harm the machine it proves. And it is a *command* (`jarvis safety-check`) because trust should be one command a user runs on their own hardware.
 - **Verified (real runs):** battery 7/7 locally; cautious gate refused T2-with-`--yes` live; preview blast radius correct; auto-rollback restored a real file byte-identical (tests with a real journal); 352+1 tests; all prior gates re-verified.
+
+---
+
+## 2026-09-03 · M8a implemented: helpfulness that never leaves the consent path
+
+- **The owner asked for Marvel-JARVIS** (helpful unrequested actions, self-development, deep user context). The design answer (ADR-0012) keeps the philosophy intact: *proactivity proposes; consent executes*. The suggestion engine is the proof that this is not a limitation but the feature — JARVIS can now be genuinely proactive (undo-orphans, stale indexes, distro pitfalls) with zero new authority.
+- **Structural honesty over policy promises:** the engine takes no Runner — there is no code path from "suggestion" to execution. Accept prints the exact command; the user types it. The same pattern as the GUI: disclose target, require consent, never surprise.
+- **Cite-or-abstain generalizes:** suggestions carry evidence (journal records, KB facts with sources) exactly like answers and plans. A suggestion without evidence is a hallucination with extra steps.
+- **The ledger is the context seed:** reject-without-reason is refused — a rejection without a "why" is a wasted calibration signal. Suppression is immediate and inspectable (`jarvis context show`), and the store prints its own boundary: tunes suggestions, never grants authority.
+- **Also this round:** the E2B workspace reset to the initial commit mid-milestone (platform outage). Recovery: `git fetch` + `reset --hard FETCH_HEAD` back to `1824602`, rebuild venv, verify 356 tests — then continue. The remote-first discipline (commit+push every milestone) is what made recovery a two-minute operation. Push early, push always (to the session branch; merges remain owner-only).
+- **Verified (real runs):** suggest/accept/reject/context flows live; 369+2 tests; all prior gates re-verified after recovery.

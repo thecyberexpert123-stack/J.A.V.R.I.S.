@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from jarvis import __version__
+from jarvis.context.store import ContextStore, default_context_path
 from jarvis.core.fingerprint import build_profile
 from jarvis.core.orchestrator import Orchestrator, TaskOutcome
 from jarvis.execution.runner import LocalRunner
@@ -31,6 +32,7 @@ from jarvis.providers.router import plan_routing
 from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
 from jarvis.safety.disclosure import blast_radius
 from jarvis.safety.selftest import run_battery
+from jarvis.suggest.engine import generate_suggestions
 from jarvis.system.models import InvalidInputError
 
 
@@ -115,6 +117,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     except Exception as exc:  # status must never crash
         print(f"gui             : probe failed ({exc})")
     print(f"cautious mode   : {'ON' if _cautious_path().exists() else 'OFF'}")
+    context_rows = len(ContextStore(default_context_path()).feedback_rows())
+    print(f"context store   : {context_rows} feedback entr{'y' if context_rows == 1 else 'ies'}")
     print(f"journal         : {default_db_path()}")
     return 0
 
@@ -589,6 +593,113 @@ def _cmd_cautious(args: argparse.Namespace) -> int:
     return 0
 
 
+def _suggest_target() -> list[dict[str, object]]:
+    from jarvis.core.fingerprint import build_profile
+    from jarvis.journal.sqlite import Journal
+
+    journal = Journal(default_db_path())
+    context = ContextStore(default_context_path())
+    suggestions = generate_suggestions(build_profile(), journal, context)
+    return [s.to_json_dict() for s in suggestions]
+
+
+def _cmd_suggest(args: argparse.Namespace) -> int:
+    action = getattr(args, "suggest_command", None)
+
+    if action in ("accept", "reject"):
+        if action == "reject" and not args.reason:
+            print(
+                "error: rejecting without a reason wastes the calibration signal "
+                '(use --reason "...")',
+                file=sys.stderr,
+            )
+            return 2
+        context = ContextStore(default_context_path())
+        suggestion = _lookup_suggestion(args.suggestion_id) if action == "accept" else None
+        if action == "accept" and suggestion is None:
+            print(
+                f"error: no current suggestion {args.suggestion_id!r} (list with: jarvis suggest)",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            context.record_feedback(
+                args.suggestion_id,
+                "accepted" if action == "accept" else "rejected",
+                reason=args.reason,
+                title=str(suggestion["title"]) if suggestion else "",
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if suggestion is not None:
+            print(f"accepted: {suggestion['title']}")
+            print("review first, then run:")
+            print(f"  {suggestion['command']}")
+        else:
+            print(f"rejected {args.suggestion_id} — suppressed from future suggestions")
+            print(f"reason recorded: {args.reason}")
+        return 0
+
+    suggestions = _suggest_target()
+    if args.json:
+        print(json.dumps(suggestions, indent=2))
+        return 0
+    if not suggestions:
+        print(
+            "no suggestions right now — everything I can see is already handled "
+            "or nothing matches the evidence rules."
+        )
+        return 0
+    print("suggestions (evidence-backed; I will not run anything):")
+    for suggestion in suggestions:
+        assert isinstance(suggestion, dict)
+        evidence_list = suggestion["evidence"]
+        assert isinstance(evidence_list, list)
+        print(f"  [{suggestion['id']}] {suggestion['title']}")
+        print(f"      {suggestion['detail']}")
+        for evidence in evidence_list:
+            assert isinstance(evidence, dict)
+            kind = evidence.get("kind", "")
+            detail = evidence.get("detail") or evidence.get("claim", "")
+            print(f"      evidence: {kind}: {detail}")
+        print(f"      accept: jarvis suggest accept {suggestion['id']}")
+        print(f'      reject: jarvis suggest reject {suggestion["id"]} --reason "..."')
+    return 0
+
+
+def _lookup_suggestion(suggestion_id: str) -> dict[str, object] | None:
+    from jarvis.core.fingerprint import build_profile
+    from jarvis.journal.sqlite import Journal
+
+    journal = Journal(default_db_path())
+    context = ContextStore(default_context_path())
+    for suggestion in generate_suggestions(build_profile(), journal, context):
+        data = suggestion.to_json_dict()
+        if data["id"] == suggestion_id:
+            return data
+    return None
+
+
+def _cmd_context(args: argparse.Namespace) -> int:
+    context = ContextStore(default_context_path())
+    rows = context.feedback_rows()
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("context store: empty (no suggestion feedback recorded yet)")
+        return 0
+    print(f"context store — {len(rows)} feedback entr{'y' if len(rows) == 1 else 'ies'}:")
+    for row in rows:
+        print(
+            f"  {row['created_utc']}  {row['decision']:<8} {row['suggestion_id']}"
+            + (f" — {row['reason']}" if row["reason"] else "")
+        )
+    print("this store tunes suggestions only; it never grants authority to act (ADR-0012).")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -715,6 +826,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_cautious.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
     p_cautious.set_defaults(func=_cmd_cautious)
+
+    p_suggest = sub.add_parser(
+        "suggest",
+        help="evidence-backed suggestions (read-only; nothing runs without you)",
+    )
+    p_suggest_sub = p_suggest.add_subparsers(dest="suggest_command")
+    p_suggest_acc = p_suggest_sub.add_parser(
+        "accept", help="accept a suggestion (prints the command)"
+    )
+    p_suggest_acc.add_argument("suggestion_id")
+    p_suggest_acc.set_defaults(func=_cmd_suggest, reason="")
+    p_suggest_rej = p_suggest_sub.add_parser(
+        "reject", help="reject a suggestion (suppressed henceforth)"
+    )
+    p_suggest_rej.add_argument("suggestion_id")
+    p_suggest_rej.add_argument("--reason", default="", help="why (calibration signal)")
+    p_suggest_rej.set_defaults(func=_cmd_suggest)
+    p_suggest.set_defaults(func=_cmd_suggest)
+
+    p_context = sub.add_parser("context", help="inspect the local context store (M8b grows it)")
+    p_context_sub = p_context.add_subparsers(dest="context_command")
+    p_context_show = p_context_sub.add_parser("show", help="show everything stored about you")
+    p_context_show.set_defaults(func=_cmd_context)
+    p_context.set_defaults(func=_cmd_context)
 
     return parser
 
