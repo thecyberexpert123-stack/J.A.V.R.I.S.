@@ -99,6 +99,21 @@ $ jarvis doctor --canaries         # trace suggestion-canary leak paths
 
 `jarvis status` shows a live integrity line. Stored feedback is write-time-scanned for injection patterns and hash-chained; `jarvis doctor` reports tampering with it. Honest limitation: a tripwire against invisible, gradual modification — not a cryptographic anchor.
 
+## Charters (ADR-0013 M9d)
+
+Recurring automation as a circuit-broken contract — one pre-authorized request, played through the same kernel on a schedule:
+
+```console
+$ jarvis --yes charter install nightly-cache \
+    --request "update the package cache" \
+    --playbook pkg.cache.refresh --tier-ceiling 1 \
+    --monthly-runs 30 --on-calendar daily
+$ jarvis charter run nightly-cache      # one firing (what the timer executes)
+$ jarvis charter list / pause / resume / revoke
+```
+
+Breakers: failure **pauses** the charter; monthly run budget and per-run step caps; hard tier ceiling (T3 never charterable); systemd `TimeoutStartSec` wall-clock bound; semantic drift (a request that stops matching its allowlist) pauses instead of improvising; contract bytes are inside the `jarvis doctor` integrity scope. Without a systemd user session, scheduling degrades honestly to manual `charter run` invocations.
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in

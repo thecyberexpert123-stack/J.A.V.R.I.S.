@@ -35,6 +35,7 @@ from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
 from jarvis.safety.disclosure import blast_radius
 from jarvis.safety.integrity import issue_canary
 from jarvis.safety.selftest import run_battery
+from jarvis.safety.tiers import Tier
 from jarvis.suggest.engine import generate_suggestions
 from jarvis.system.models import InvalidInputError
 
@@ -724,6 +725,167 @@ def _integrity_line() -> str:
     return f"DRIFT ({len(report.drift)} entry/ies differ) — run: jarvis doctor"
 
 
+def _charter_consent(yes: bool, silent: bool) -> bool:
+    """T2-grade consent for installing a standing order — the real gate."""
+    policy = ApprovalPolicy(yes=yes, silent=silent)
+    try:
+        policy.decide(Tier.T2, [])
+    except ApprovalRefused:
+        return False
+    return True
+
+
+def _charter_install(args: argparse.Namespace) -> int:
+    import shutil as _shutil
+
+    from jarvis.journal.sqlite import _utcnow
+    from jarvis.safety import charter as ch
+
+    doc: dict[str, object] = {
+        "schema": ch.CHARTER_SCHEMA,
+        "id": args.charter_id,
+        "request": args.request,
+        "playbooks": list(args.playbook),
+        "tier_ceiling": args.tier_ceiling,
+        "max_steps_per_run": args.max_steps,
+        "monthly_run_budget": args.monthly_runs,
+        "on_calendar": args.on_calendar,
+        "timeout_start_sec": args.timeout_start_sec,
+        "failure_policy": ch.FAILURE_POLICY,
+        "created_utc": _utcnow(),
+    }
+    errors = ch.validate_charter(doc)
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 2
+    tiers = ch.playbook_tiers()
+    print("charter contract (a standing order — read every line):")
+    print(f"  id        : {args.charter_id}")
+    print(f"  request   : {args.request}")
+    allow = ", ".join(f"{p} (T{tiers[p]})" if p in tiers else p for p in args.playbook)
+    print(f"  allowlist : {allow} — hard ceiling T{args.tier_ceiling} (T3 refused by the kernel)")
+    print(
+        f"  breakers  : failure->{ch.FAILURE_POLICY} · <={args.max_steps} steps/run ·"
+        f" <={args.monthly_runs} runs/30d · TimeoutStartSec={args.timeout_start_sec}"
+    )
+    schedule = (
+        f"systemd user timer ({args.on_calendar})" if args.on_calendar else "manual (no schedule)"
+    )
+    print(f"  schedule  : {schedule}")
+    print("  scope     : every firing is a normal journaled task; nothing outside the allowlist")
+    if not _charter_consent(yes=args.yes, silent=bool(args.json)):
+        print("refused: charter not installed (no consent)", file=sys.stderr)
+        return 2
+    try:
+        path = ch.write_charter(doc)
+    except ch.CharterError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"installed: {path}")
+    print("policy state changed — review it, then: jarvis doctor --write-baseline")
+    if args.on_calendar and not args.no_timer:
+        jarvis_path = _shutil.which("jarvis")
+        if jarvis_path is None:
+            print("timer: jarvis executable not on PATH — schedule manually (jarvis charter run)")
+        else:
+            service, timer = ch.unit_documents(doc, jarvis_path)
+            unit_dir = ch.user_unit_dir()
+            unit_dir.mkdir(parents=True, exist_ok=True)
+            (unit_dir / f"jarvis-charter-{args.charter_id}.service").write_text(service)
+            (unit_dir / f"jarvis-charter-{args.charter_id}.timer").write_text(timer)
+            ok_reload, detail = ch.systemctl_user(["daemon-reload"])
+            ok_enable, detail2 = ch.systemctl_user(
+                ["enable", "--now", f"jarvis-charter-{args.charter_id}.timer"]
+            )
+            if ok_reload and ok_enable:
+                print(f"timer enabled (systemd user): jarvis-charter-{args.charter_id}.timer")
+            else:
+                print(f"timer NOT enabled ({detail or detail2}) — schedule manually:")
+                print(f"  jarvis charter run {args.charter_id}")
+    return 0
+
+
+def _cmd_charter(args: argparse.Namespace) -> int:
+    from jarvis.safety import charter as ch
+
+    action = args.charter_command
+    if action == "install":
+        return _charter_install(args)
+    if action == "list":
+        journal = Journal(default_db_path())
+        contracts = sorted(ch.charters_dir().glob("*.json"))
+        if not contracts:
+            print("no charters installed (install one with: jarvis charter install)")
+            return 0
+        print(f"{'id':<20}{'status':<10}{'ceiling':<9}{'runs':<6}{'fail':<6}request")
+        for path in contracts:
+            doc = json.loads(path.read_text())
+            state = ch.read_state(str(doc.get("id", "?")))
+            used = ch.count_recent_runs(journal, list(doc.get("playbooks", [])))
+            print(
+                f"{doc.get('id', '?')!s:<20}{state.get('status', '?')!s:<10}"
+                f"T{doc.get('tier_ceiling', '?')!s:<8}"
+                f"{used}/{doc.get('monthly_run_budget', '?')!s:<4}"
+                f"{state.get('failures', 0)!s:<6}{doc.get('request', '')}"
+            )
+        return 0
+    if action == "run":
+        try:
+            doc = ch.load_charter(args.charter_id)
+            state = ch.read_state(args.charter_id)
+        except ch.CharterError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        journal = Journal(default_db_path())
+        playbook_id, reason = ch.precheck(doc, state, journal)
+        if not playbook_id:
+            print(f"error: {reason}", file=sys.stderr)
+            return 2
+        # Pre-authorized by the charter (owner consented at install); precheck
+        # narrowed this firing to the allowlisted playbook at or under the ceiling.
+        orch = Orchestrator(
+            build_profile(),
+            journal,
+            LocalRunner(),
+            ApprovalPolicy(yes=True, silent=bool(args.json), stdin=io.StringIO()),
+            echo=False,
+        )
+        outcome = orch.run_intent(str(doc["request"]), dry_run=args.dry_run)
+        if not args.dry_run:
+            ch.record_firing(args.charter_id, outcome.status.value)
+        if args.json:
+            print(json.dumps(outcome.to_json_dict(), indent=2))
+        else:
+            _print_outcome(outcome)
+        return outcome.exit_code()
+    # pause / resume / revoke
+    try:
+        doc = ch.load_charter(args.charter_id)
+    except ch.CharterError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if action == "pause":
+        ch.set_status(args.charter_id, "paused", reason="paused by owner")
+        if doc.get("on_calendar"):
+            ch.systemctl_user(["stop", f"jarvis-charter-{args.charter_id}.timer"])
+        print(f"paused {args.charter_id} — runs will refuse until: jarvis charter resume")
+        return 0
+    if action == "resume":
+        ch.set_status(args.charter_id, "active", reason="")
+        if doc.get("on_calendar"):
+            ch.systemctl_user(["start", f"jarvis-charter-{args.charter_id}.timer"])
+        print(f"resumed {args.charter_id}")
+        return 0
+    ch.set_status(args.charter_id, "revoked", reason="revoked by owner")
+    if doc.get("on_calendar"):
+        ch.systemctl_user(["disable", "--now", f"jarvis-charter-{args.charter_id}.timer"])
+    print(
+        f"revoked {args.charter_id} — the contract file is kept for audit; firings refuse forever"
+    )
+    return 0
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Policy-state integrity: baseline, drift verification, canaries (M9c)."""
     from jarvis.safety import integrity
@@ -996,6 +1158,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="list issued suggestion canaries (leak tracing)",
     )
     p_doctor.set_defaults(func=_cmd_doctor)
+
+    p_charter = sub.add_parser(
+        "charter", help="circuit-broken standing orders: install/list/run/pause/resume/revoke (M9d)"
+    )
+    p_charter_sub = p_charter.add_subparsers(dest="charter_command", required=True)
+    p_ch_install = p_charter_sub.add_parser(
+        "install", help="install a charter (the contract is shown; T2 consent required)"
+    )
+    p_ch_install.add_argument("charter_id", help="short id: [a-z][a-z0-9-]{1,30}")
+    p_ch_install.add_argument(
+        "--request", required=True, help="the exact NL request to pre-authorize"
+    )
+    p_ch_install.add_argument(
+        "--playbook",
+        action="append",
+        required=True,
+        dest="playbook",
+        help="allowlisted playbook id (repeatable)",
+    )
+    p_ch_install.add_argument(
+        "--tier-ceiling", type=int, default=1, help="hard tier ceiling, 0..2 (T3 never charterable)"
+    )
+    p_ch_install.add_argument(
+        "--max-steps", type=int, default=8, help="circuit breaker: steps per run"
+    )
+    p_ch_install.add_argument(
+        "--monthly-runs", type=int, default=30, help="circuit breaker: runs per rolling 30 days"
+    )
+    p_ch_install.add_argument(
+        "--on-calendar", default=None, help="systemd OnCalendar value (omit for manual scheduling)"
+    )
+    p_ch_install.add_argument(
+        "--timeout-start-sec",
+        type=int,
+        default=900,
+        help="systemd TimeoutStartSec wall-clock bound",
+    )
+    p_ch_install.add_argument(
+        "--no-timer", action="store_true", help="do not touch systemd even if present"
+    )
+    p_ch_install.set_defaults(func=_cmd_charter)
+    for name, help_text in (
+        ("list", "list charters with state and budget usage"),
+        ("run", "one firing (timer ExecStart; precheck enforces the charter scope)"),
+        ("pause", "pause a charter (stops the timer best-effort)"),
+        ("resume", "resume a paused charter"),
+        ("revoke", "revoke permanently (audit file kept)"),
+    ):
+        p_ch_action = p_charter_sub.add_parser(name, help=help_text)
+        p_ch_action.add_argument("charter_id", nargs="?" if name == "list" else None)
+        if name == "run":
+            p_ch_action.add_argument("--dry-run", action="store_true")
+        p_ch_action.set_defaults(func=_cmd_charter)
 
     return parser
 

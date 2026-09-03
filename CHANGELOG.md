@@ -29,6 +29,21 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.5.0] - 2026-09-03 — M9d: charters, circuit-broken standing orders (ADR-0013, owner-approved)
+
+### Added
+- **`jarvis charter`**: recurring automation as a versioned, revocable contract — the "heartbeat" capability the landscape research shows is the field's most useful *and* most abused feature, designed here against its documented failure modes.
+- **Install (`charter install`, T2 consent through the real `ApprovalPolicy` gate)**: the contract is printed line-by-line before consent — one pre-authorized NL request, an explicit playbook allowlist, a hard tier ceiling (0..2; **T3 is never charterable**), `--on-calendar` (systemd user timer; omit for manual scheduling), per-run step cap, monthly run budget, and `TimeoutStartSec` wall-clock bound.
+- **Run (`charter run`)**: precheck opens every firing — status must be `active`, the contract must still validate, the request must still resolve to an allowlisted playbook at or under the ceiling (semantic drift **pauses** instead of improvising), and the rolling-30-day journal budget must be under the cap. Only then does the request play through the normal Orchestrator with pre-authorized consent; every firing is a normal journaled task.
+- **Circuit breakers**: failure policy is fixed at `pause` (a failed or refused firing stops the charter until the owner resumes); budget exhaustion pauses; `pause`/`resume`/`revoke` give the owner instant control (revoke keeps the audit file, firings refuse forever).
+- **systemd user timers, honestly degraded**: `charter install` writes `jarvis-charter-<id>.{service,timer}` and enables them when a systemd user session exists; otherwise it says so and documents the manual path (`jarvis charter run`). Unit generation is pure and unit-tested; `systemctl --user` is best-effort and never crashes the CLI.
+- **Integrity integration**: charter contracts live in the M9c scope (`~/.local/state/jarvis/charters/*.json`) — a new or drifted contract trips `jarvis doctor` until deliberately re-baselined; operational state files (`.state`) are deliberately outside the glob so pausing/resuming never false-alarms.
+- Anti-Ultron clause holds: a charter can only replay its own allowlisted request through the kernel; it cannot modify charters, code, or policy.
+- Tests: +23 (schema invariants incl. T3 refusal, consent gate, dry-run semantics, failure pause → refusal, budget exhaustion, tamper + semantic-drift layers, revoke, systemd units, integrity-scope placement). Suite: **448 passed + 2 honest skips** (450 collected).
+
+### Changed
+- Version 1.5.0; PKGBUILD/spec synced.
+
 ## [1.4.0] - 2026-09-03 — M9c: memory & config integrity (ADR-0013, owner-approved)
 
 ### Added
