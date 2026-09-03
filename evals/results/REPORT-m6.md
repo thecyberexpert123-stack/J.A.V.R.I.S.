@@ -44,7 +44,7 @@ install time; no pip-in-postinst.
 `packaging.yml` runs **on every push**: artifacts job (build + clean-venv smoke)
 → 5-distro install matrix (debian-12, ubuntu-24.04, fedora, arch, alpine), each
 installing its *native* artifact and running the KB smoke.
-**OBSERVED: all 5 jobs success** (run 33653104688, commit `1f9f430`) — debian-12 ✓,
+**OBSERVED: all 5 jobs success** (run 33653349705, commit `1f9f430`; CI run 33653349731 also green. Errata 2026-09-03: the originally cited run id `33653104688` was a transcription slip — it does not exist (HTTP 404); corrected after `gh run view` verification of every job.) — debian-12 ✓,
 ubuntu-24.04 ✓, fedora (rpmbuild→dnf) ✓, arch (makepkg→pacman -U) ✓, alpine (pip
 wheel) ✓. This is the plan's "install tested on clean containers of all Tier-1
 distros" criterion, met.
@@ -84,7 +84,9 @@ now single-line CI annotations by design.
 ## 8. Gates at publication (v1.0.0)
 
 ruff lint+format clean · mypy clean (41 files) · pytest **340 passed, 1 honest
-skip** · live 5 pass + 1 skip · M2 planner 9/9 · M3 fault gate 35/0 · M4
+skip** (re-played exactly at `1f9f430` on 2026-09-03: match) · live-marked set 10: 9
+pass + 1 skip (test_live 4+1 model-skip, knowledge_live 2, gui_live 3 — errata
+2026-09-03: originally written "live 5 pass + 1 skip", a stale 0.4.0-era figure) · M2 planner 9/9 · M3 fault gate 35/0 · M4
 grounding 12/12 (0 unverifiable claims) · M5 GUI 15/15 X-lane + 4/4 headless ·
 M1 containers 70/70 · **packaging matrix 5/5 distros (CI, observed)**.
 

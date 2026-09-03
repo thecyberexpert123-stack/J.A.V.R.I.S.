@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 > Merge policy: the development agent **never merges** anything into `main`. All entries below land on the session working branch and reach `main` only through owner-approved merges.
 
+## Errata — 2026-09-03
+
+Suite-count claims were re-verified by replaying each milestone's exact commit in an
+isolated worktree (era-correct package metadata, `RUN_LIVE=1`, no local LLM; skip
+identities confirmed via `-rs`). Originals preserved here for transparency; numbers
+below each entry were corrected in place.
+
+- **0.2.0 / 0.3.0:** the quoted "unit" totals (193 / 231) already included the 4 opt-in
+  live tests; true split is 189+4 / 227+4 (verified by `--collect-only` sums at
+  `4178777` / `7720176`). Totals were right; the split labels double-counted.
+- **0.4.0:** "297 unit + 6 live" → observed at `d2e40f4`: **301 collected = 294 unit +
+  7 live-marked (live: 6 pass + 1 skip)**.
+- **0.5.0:** "+38 tests / 339 passed + 1 honest skip; live 5 pass + 1 skip" → observed
+  at `6d53a63`: **+40 tests; 340 passed + 1 skip (341 collected); live-marked set is 10
+  (9 pass + 1 skip)**. The "live 5" phrasing was stale from the 0.4.0 era.
+- **1.1.0:** "+18 tests / 352 passed + 1 honest skip" → observed at `a08ba8f`: **+17
+  tests; 356 passed + 2 skipped** (both model-availability skips: `live_llm` gate and
+  the Ollama smoke test).
+- Verified exact, no change: 1.0.0 gates (REPORT-m6 §8: 340 passed + 1 skip at
+  `1f9f430`), 1.2.0 (370 passed + 2 skips at `2c64904`), 1.2.1 (372 passed + 2 skips).
+- `evals/results/REPORT-m6.md` §4 cited packaging run `33653104688` — a transcription
+  slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
+  success), CI run `33653349731` also green. Corrected in place.
+
 ## [Unreleased] — M1 container evaluation: 70/70 PASSED
 
 ### Verified (observed, run 33637847042)
@@ -51,7 +75,7 @@ Full findings, soundness checks, and documented limitations: `evals/results/AUDI
 - **Cautious mode** (`jarvis cautious on/off/status`): blocks T2+ even with `--yes`; each action needs `--cautious-ok`; `--preview` always allowed. Status line in `jarvis status`.
 - **Live-LLM injection corpus** (`tests/test_fault_injection_live.py`, marker `live_llm`): 7 prompt-injection frames through a real local model; planner-or-kernel-must-refuse invariant; honest skip without a model. New weekly `llm-eval.yml` CI lane (Ollama + qwen2.5:0.5b) for real-model drift detection.
 - **`docs/SAFE-TESTING.md`**: verified/unverified map + 4-rung safe-testing ladder + safety-bug reporting protocol.
-- Tests: +18 (TOCTOU order-semantics runner, blast radius, cautious gates, auto-rollback with real journal, battery, CLI). Suite: **352 passed + 1 honest skip**.
+- Tests: +17 (TOCTOU order-semantics runner, blast radius, cautious gates, auto-rollback with real journal, battery, CLI). Suite: **356 passed + 2 honest skips** (both model-availability skips).
 
 ### Changed
 - `Orchestrator` gains `auto_rollback` / `cautious_ok`; `undo()` gains internal `skip_consent` (rollback runs under the original task's consent); `TaskOutcome` gains `rolled_back` / `rollback_task_id`.
@@ -79,7 +103,7 @@ Full findings, soundness checks, and documented limitations: `evals/results/AUDI
 - **Vision fallback** (`jarvis gui describe`): screenshot → local Ollama vision model; abstains loudly when absent.
 - **`gui.launch` playbook** (NL "open firefox", registry 12): app-name argv only, no paths, case-preserving, T2.
 - **GUI eval** (`evals/harness/m5_gui.py` + 15-task catalog): real X stack (Xvfb + i3 + xterm) through the real CLI in CI (`gui-eval` job), gate ≥98% ⇒ 15/15; headless honesty subset (4 tasks) verified locally **4/4**; consent refusal is a graded task.
-- Tests: +38 (detection, matrix, parsers, policy, service consent/journal/privacy, wizard, vision stub, CLI, playbook, detach regression). Suite: **339 passed + 1 honest skip**; live 5 pass + 1 skip.
+- Tests: +40 (detection, matrix, parsers, policy, service consent/journal/privacy, wizard, vision stub, CLI, playbook, detach regression). Suite: **340 passed + 1 honest skip** (341 collected); live-marked set: 10 (9 pass + 1 skip).
 
 ### Changed
 - Package version 0.5.0; README GUI section; report addendum `evals/results/REPORT-m5.md`.
@@ -93,7 +117,7 @@ Full findings, soundness checks, and documented limitations: `evals/results/AUDI
 - **Opt-in online verification** (`knowledge/fetch.py`, `JARVIS_ONLINE_DOCS=1`): kernel-doc citations verified against **`torvalds/linux` master** via the GitHub Contents API (owner-directed knowledge source; upstream reference, not vendored — ADR-0009); strict URL allowlist refuses anything else before a request; results cached in the state dir.
 - **`jarvis facts [topic]`** browser; KB version/count in `jarvis status`; `jarvis` console-script entry point (`pip install` now puts the CLI on PATH).
 - **Grounding eval** (`evals/harness/m4_grounding.py` + catalog): gate **0 unverifiable claims** — answered ⇒ cited; verified ⇒ verifier passed; kernel citations re-verified upstream in CI (online mode). Result: **12/12, 0 unverifiable claims** (offline 10/10; +2 upstream torvalds/linux checks).
-- Tests: +26 (store schema refusals, verifiers on the real host, answers honesty, CLI surface, allowlist-before-network, live upstream verification). Suite: **297 unit + 6 live**.
+- Tests: +26 (store schema refusals, verifiers on the real host, answers honesty, CLI surface, allowlist-before-network, live upstream verification). Suite: **301 collected (294 unit + 7 live-marked; live: 6 pass + 1 skip)**.
 
 ### Changed
 - Package version 0.4.0; README quick start gains `explain`/`facts`; report addendum `evals/results/REPORT-m4.md`.
@@ -121,7 +145,7 @@ Full findings, soundness checks, and documented limitations: `evals/results/AUDI
 - **Composite plan execution** (`Orchestrator.run_plan`): multi-part plans with per-part post-condition verification, one journal task (`plan/<provider>`), tier gate on the maximum step tier, and **composite undo applied last-first**; a part without a reverse path (e.g. upgrade) marks the plan's undo honestly unavailable.
 - **CLI**: `jarvis ask` (one-shot engine+planner with `--dry-run`) and `jarvis chat` (interactive REPL: `/status`, `/playbooks`, `/tasks [n]`, `/undo <id>`, `/help`); `jarvis status` now reports planning-backend availability.
 - **M2 eval** (`evals/harness/m2_eval.py` + `evals/catalog/m2.json`): 9 deterministic cases against a scripted local LLM stub — routing (0-LLM fast path), schema validity of proposals, injection/malformed/empty refusals, provider-outage honesty, no-backend guidance. Wired into CI; **9/9 required**.
-- Tests: +38 (provider HTTP behavior on real sockets via stub server, planner validation branches, composite plan lifecycle incl. poisoned undo, CLI routing incl. remote-fallback). Total suite: **231 unit + 4 live**.
+- Tests: +38 (provider HTTP behavior on real sockets via stub server, planner validation branches, composite plan lifecycle incl. poisoned undo, CLI routing incl. remote-fallback). Total suite: **227 unit + 4 live (231 collected)**.
 
 ### Changed
 - Package version 0.2.0; ADR-0007 records the planner architecture and the deliberate deferral of Textual/Pydantic (stdlib REPL + strict hand-rolled validation suffice for the fixed schema).
@@ -138,7 +162,7 @@ Full findings, soundness checks, and documented limitations: `evals/results/AUDI
 - **Audit journal** (`src/jarvis/journal/sqlite.py`): SQLite (0600) tasks/steps/undo-artifacts under `~/.local/state/jarvis` (XDG/state-dir env precedence); undo artifacts stored before first execution and strictly revalidated (incl. protected-set re-check) on replay.
 - **Orchestrator** (`src/jarvis/core/orchestrator.py`): full lifecycle REFUSED, RUNNING, SUCCEEDED/FAILED/INTERRUPTED/UNDONE with SIGINT/SIGTERM kill-switch (process-group termination, journal marked `interrupted`, exit 130).
 - **CLI** (`src/jarvis/cli/app.py`, stdlib argparse per ADR-0005): `status` / `do [--dry-run] [--yes]` / `undo [--dry-run]` / `playbooks` / `tasks`, global `--json`, documented exit codes (0/1/2/130).
-- Tests: 193 unit tests (adapters exact-argv contracts, safety blocklist, matching table, journal round-trips, orchestrator lifecycle incl. tampered-undo refusal and interrupt semantics, runner sudo/timeout behavior, CLI surface) plus 4 opt-in live integration tests (`RUN_LIVE=1`; read-only and honest privilege-failure paths only — real mutations belong to the CI distro-container evaluation).
+- Tests: 189 unit tests (adapters exact-argv contracts, safety blocklist, matching table, journal round-trips, orchestrator lifecycle incl. tampered-undo refusal and interrupt semantics, runner sudo/timeout behavior, CLI surface) plus 4 opt-in live integration tests (193 collected in total) (`RUN_LIVE=1`; read-only and honest privilege-failure paths only — real mutations belong to the CI distro-container evaluation).
 - Docs: ADR-0005 (M1 stdlib-only runtime), ADR-0006 (argv-only execution, validation, privilege policy).
 
 ### Changed
