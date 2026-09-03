@@ -39,6 +39,9 @@ INIT = {
 
 def make_server(monkeypatch: Any, tmp_path: Any, runner: FakeRunner | None = None) -> MCPServer:
     profile = make_profile()
+    monkeypatch.setenv(
+        "JARVIS_STATE_DIR", str(tmp_path / "state")
+    )  # canaries land here, not ~/.local
     monkeypatch.setattr(mcp_server, "build_profile", lambda: profile)
     monkeypatch.setattr(mcp_server, "default_db_path", lambda: tmp_path / "journal.sqlite3")
     monkeypatch.setattr(mcp_server, "default_context_path", lambda: tmp_path / "context.json")

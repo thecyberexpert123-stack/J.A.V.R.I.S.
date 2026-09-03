@@ -33,6 +33,7 @@ from jarvis.providers.base import ProviderError
 from jarvis.providers.router import plan_routing
 from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
 from jarvis.safety.disclosure import blast_radius
+from jarvis.safety.integrity import issue_canary
 from jarvis.safety.selftest import run_battery
 from jarvis.suggest.engine import generate_suggestions
 from jarvis.system.models import InvalidInputError
@@ -119,6 +120,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
     except Exception as exc:  # status must never crash
         print(f"gui             : probe failed ({exc})")
     print(f"cautious mode   : {'ON' if _cautious_path().exists() else 'OFF'}")
+    try:
+        print(f"integrity       : {_integrity_line()}")
+    except Exception as exc:  # status must never crash
+        print(f"integrity       : probe failed ({exc})")
     context_rows = len(ContextStore(default_context_path()).feedback_rows())
     print(f"context store   : {context_rows} feedback entr{'y' if context_rows == 1 else 'ies'}")
     print(f"journal         : {default_db_path()}")
@@ -654,6 +659,11 @@ def _cmd_suggest(args: argparse.Namespace) -> int:
         )
         return 0
     print("suggestions (evidence-backed; I will not run anything):")
+    canary = issue_canary("cli")
+    print(
+        f"  canary     : {canary} — if this string ever appears outside this machine,"
+        " trace it: jarvis doctor --canaries"
+    )
     for suggestion in suggestions:
         assert isinstance(suggestion, dict)
         evidence_list = suggestion["evidence"]
@@ -700,6 +710,98 @@ def _cmd_context(args: argparse.Namespace) -> int:
         )
     print("this store tunes suggestions only; it never grants authority to act (ADR-0012).")
     return 0
+
+
+def _integrity_line() -> str:
+    from jarvis.safety import integrity
+
+    baseline = integrity.default_baseline_path()
+    if not baseline.is_file():
+        return "no baseline — run: jarvis doctor --write-baseline"
+    report = integrity.verify(baseline)
+    if report.clean:
+        return f"verified ({len(report.rows)} entries, baseline {report.created_utc})"
+    return f"DRIFT ({len(report.drift)} entry/ies differ) — run: jarvis doctor"
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Policy-state integrity: baseline, drift verification, canaries (M9c)."""
+    from jarvis.safety import integrity
+
+    if getattr(args, "canaries", False):
+        records = integrity.read_canaries()
+        if not records:
+            print("no canaries issued yet (each suggestion render records one)")
+            return 0
+        print(f"{len(records)} canary issuance(s) — if any string below appears off-machine,")
+        print("the corresponding suggestion output leaked:")
+        for record in records:
+            print(f"  {record['issued_utc']}  [{record['surface']}] {record['canary']}")
+        return 0
+    if args.write_baseline:
+        document = integrity.write_baseline(integrity.default_baseline_path())
+        entries = document["entries"]
+        assert isinstance(entries, dict)
+        print(f"baseline written: {len(entries)} entries -> {integrity.default_baseline_path()}")
+        print("re-baseline deliberately after each reviewed upgrade; `jarvis doctor` verifies.")
+        return 0
+    baseline = integrity.default_baseline_path()
+    if not baseline.is_file():
+        print("no integrity baseline yet — silent drift of policy-relevant state")
+        print("(KB, playbooks, safety kernel, ingresses, cautious flag) cannot be detected.")
+        print("review the current state, then write the baseline explicitly:")
+        print("  jarvis doctor --write-baseline")
+        return 2
+    report = integrity.verify(baseline)
+    context_report = ContextStore(default_context_path()).verify_integrity()
+    poisoned = not bool(context_report["ok"])
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "clean": report.clean and not poisoned,
+                    "baseline_version": report.baseline_version,
+                    "baseline_created_utc": report.created_utc,
+                    "entries": len(report.rows),
+                    "drift": [
+                        {"path": str(row.path), "status": row.status, "detail": row.detail}
+                        for row in report.drift
+                    ],
+                    "context_store": context_report,
+                },
+                indent=2,
+            )
+        )
+        return 0 if report.clean and not poisoned else 1
+    print(
+        f"context store  : {'ok' if not poisoned else 'TAMPERED'}"
+        f" ({context_report['total']} entries, {context_report['hashed']} hashed,"
+        f" {context_report['legacy_unhashed']} legacy)"
+        + (f" — {context_report['detail']}" if poisoned else "")
+    )
+    if report.clean and not poisoned:
+        print(
+            f"integrity: OK — {len(report.rows)} entries match the baseline "
+            f"({report.created_utc}, jarvis {report.baseline_version})."
+        )
+        return 0
+    if poisoned:
+        print(
+            "context store integrity FAILED — see detail above; treat stored feedback as suspect."
+        )
+    if not report.clean:
+        print(
+            f"integrity: DRIFT — {len(report.drift)} of {len(report.rows)} entries differ "
+            f"from the baseline ({report.created_utc}):"
+        )
+        for row in report.drift:
+            print(f"  [{row.status}] {row.path} — {row.detail}")
+        print(
+            "review every change above; re-baseline only what is expected"
+            " (e.g. a reviewed upgrade):"
+        )
+        print("  jarvis doctor --write-baseline")
+    return 1
 
 
 def _cmd_mcp_serve(args: argparse.Namespace) -> int:
@@ -878,6 +980,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_mcp_serve.set_defaults(func=_cmd_mcp_serve)
+
+    p_doctor = sub.add_parser(
+        "doctor",
+        help="policy-state integrity: baseline, drift check, canaries (ADR-0013 M9c)",
+    )
+    p_doctor.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="write or re-write the integrity baseline (explicit; after reviewed upgrades)",
+    )
+    p_doctor.add_argument(
+        "--canaries",
+        action="store_true",
+        help="list issued suggestion canaries (leak tracing)",
+    )
+    p_doctor.set_defaults(func=_cmd_doctor)
 
     return parser
 

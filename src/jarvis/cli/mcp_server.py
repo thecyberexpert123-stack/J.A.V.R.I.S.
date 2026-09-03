@@ -31,6 +31,7 @@ from jarvis.knowledge.answers import answer as kb_answer
 from jarvis.knowledge.store import load_kb
 from jarvis.safety.approval import ApprovalPolicy
 from jarvis.safety.disclosure import blast_radius
+from jarvis.safety.integrity import issue_canary
 from jarvis.suggest.engine import generate_suggestions
 
 _FALLBACK_PROTOCOL_VERSION = "2024-11-05"
@@ -200,6 +201,7 @@ def _tool_suggest(_args: dict[str, object]) -> tuple[object, bool]:
     return (
         {
             "suggestions": suggestions,
+            "canary": issue_canary("mcp"),
             "note": "read-only; JARVIS does not execute suggestions",
         },
         False,

@@ -29,6 +29,18 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.4.0] - 2026-09-03 — M9c: memory & config integrity (ADR-0013, owner-approved)
+
+### Added
+- **`jarvis doctor`**: hash baseline over policy-relevant state — packaged KB files, the decision/gate/execution code (playbooks registry, safety kernel, runner, orchestrator, both ingress front-ends), the context store module, and the cautious-mode marker — written **only** via explicit `--write-baseline`; every later run reports drift (`ok` / exit 0, drift / exit 1, no baseline / exit 2 with guidance). `jarvis status` carries a live integrity line. Honest limitation stated in code and docs: this is a tripwire against invisible, gradual modification (the OpenClaw "security degradation" class), not a cryptographic anchor.
+- **`jarvis doctor --canaries`**: every suggestion render (CLI human output, MCP `jarvis_suggest`) now issues a random canary token recorded in `canaries.jsonl`; if a canary string appears off-machine, the owner can trace exactly which suggestion batch leaked.
+- **Context store hardening**: feedback text (reason/title) is scanned at write time for injection patterns and refused (the table feeds future suggestions in M8b — poisoned feedback would become poisoned suggestions); every entry carries a content hash chained into a table digest, so silent edits, deletions, and forgeries are reported by `verify_integrity()`; pre-1.4.0 rows are honestly reported as legacy and gain hashes on their next upsert; `jarvis doctor` folds the chain verdict into its exit status.
+- Tests: +26 (baseline round-trip/changed/missing/added, doctor CLI + status line, canary issuance/trace, scan refusal/allowance, tamper detection incl. a doctor-level poisoned-store case). Suite: **425 passed + 2 honest skips** (427 collected).
+
+### Changed
+- Version 1.4.0; PKGBUILD/spec synced.
+- MCP tool surface intentionally unchanged (fixed set of six — new capabilities are CLI/doctor-side; the server's `jarvis_suggest` payload gains only a `canary` field).
+
 ## [1.3.0] - 2026-09-03 — M9a: MCP server surface (ADR-0013, owner-approved)
 
 ### Added

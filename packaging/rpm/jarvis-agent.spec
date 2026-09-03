@@ -1,5 +1,5 @@
 Name:           jarvis-agent
-Version:        1.3.0
+Version:        1.4.0
 Release:        1%{?dist}
 Summary:        JARVIS (Just A Rather Very Intelligent System) — verified automation agent for Linux
 License:        LicenseRef-Proprietary-Until-Owner-Decides

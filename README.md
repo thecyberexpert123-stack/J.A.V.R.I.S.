@@ -87,6 +87,18 @@ Smoke test:
 $ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n' | jarvis mcp serve
 ```
 
+## Integrity (ADR-0013 M9c)
+
+Policy-relevant state — KB files, playbooks registry, safety kernel, execution and ingress code, cautious flag — is hashed into a machine-local baseline:
+
+```console
+$ jarvis doctor --write-baseline   # once, after reviewing the state
+$ jarvis doctor                    # verify: 0 clean · 1 drift · 2 no baseline
+$ jarvis doctor --canaries         # trace suggestion-canary leak paths
+```
+
+`jarvis status` shows a live integrity line. Stored feedback is write-time-scanned for injection patterns and hash-chained; `jarvis doctor` reports tampering with it. Honest limitation: a tripwire against invisible, gradual modification — not a cryptographic anchor.
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in
