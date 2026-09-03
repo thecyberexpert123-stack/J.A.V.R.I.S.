@@ -138,6 +138,20 @@ $ jarvis do --dry-run "refresh everything"            # plans through the kernel
 
 Packs are receipt-pinned (sha256) and live inside the `jarvis doctor` integrity scope; drifted packs are skipped fail-closed. GUI actions disclose their route (`api` / `wm` / `injection`) in `jarvis gui status`; `type_text` prefers the AT-SPI EditableText API over synthetic keystrokes (ADR-0013 M9e).
 
+## Context & growth (ADR-0012 M8b/M8d)
+
+```console
+$ jarvis context prefer suppress.undo 1        # tune suggestions, never authority
+$ jarvis context rule never touch docker       # house rules suppress matching suggestions
+$ jarvis context routines                      # journal-inferred patterns (never persisted)
+$ jarvis context forget                        # delete everything (consent-gated)
+$ jarvis grow fact --id t.f --topic t --claim "..." --pattern q \
+    --sources '[{"kind":"docs","ref":"..."}]'  # drafts validated by the real KB store
+$ jarvis grow export t.f --out out/            # artifact + owner commands (owner merges)
+```
+
+Context is local, inspectable (`context show`), deletable, and tamper-evident (`jarvis doctor` verifies its hash chains). Growth proposals are inert data; the kernel, policy, and shipped knowledge stay outside JARVIS's write scope — promotion runs through owner-reviewed PRs and consented installs only.
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in

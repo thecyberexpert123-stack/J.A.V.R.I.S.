@@ -695,20 +695,98 @@ def _lookup_suggestion(suggestion_id: str) -> dict[str, object] | None:
 
 
 def _cmd_context(args: argparse.Namespace) -> int:
+    from jarvis.context.routines import infer_routines
+
     context = ContextStore(default_context_path())
+    action = getattr(args, "context_command", None) or "show"
+
+    if action == "prefer":
+        try:
+            if args.unset:
+                removed = context.unset_preference(args.key)
+                print(
+                    f"removed preference {args.key!r}" if removed else f"no preference {args.key!r}"
+                )
+                return 0 if removed else 2
+            context.set_preference(args.key, args.value)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"preference set: {args.key} = {args.value}")
+        print("tunes suggestions only — never authority (ADR-0012)")
+        return 0
+
+    if action == "rule":
+        try:
+            if args.remove_id:
+                removed = context.remove_rule(args.remove_id)
+                print(f"removed {args.remove_id}" if removed else f"no rule {args.remove_id!r}")
+                return 0 if removed else 2
+            rule_id = context.add_rule(" ".join(args.text))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"house rule added: [{rule_id}] {' '.join(args.text)}")
+        print("matching suggestions are suppressed from listings")
+        return 0
+
+    if action == "routines":
+        journal = Journal(default_db_path())
+        routines = infer_routines(journal)
+        if args.json:
+            print(json.dumps(routines, indent=2))
+            return 0
+        if not routines:
+            print("no routines yet — recurring patterns appear after repeated journaled use")
+            return 0
+        print("inferred routines (derived from the journal; nothing persisted):")
+        for routine in routines:
+            print(
+                f"  {routine['playbook_id']:<22} {routine['runs_in_window']}x"
+                f"/{routine['window_days']}d  {routine['cadence']:<16}"
+                f" confidence={routine['confidence']}"
+            )
+            if routine["charter_hint"]:
+                print(f"    hint: {routine['charter_hint']}")
+        return 0
+
+    if action == "forget":
+        if not _charter_consent(yes=args.yes, silent=bool(args.json)):
+            print(
+                "refused: context forget requires explicit consent (destructive)", file=sys.stderr
+            )
+            return 2
+        counts = context.forget_everything()
+        total = sum(counts.values())
+        print(f"context store forgotten: {total} row(s) removed {counts}")
+        return 0
+
+    # show
     rows = context.feedback_rows()
+    prefs = context.preferences()
+    rules = context.rule_rows()
     if args.json:
-        print(json.dumps(rows, indent=2))
+        print(json.dumps({"feedback": rows, "preferences": prefs, "rules": rules}, indent=2))
         return 0
-    if not rows:
-        print("context store: empty (no suggestion feedback recorded yet)")
+    if not rows and not prefs and not rules:
+        print("context store: empty (feedback, preferences, and rules all empty)")
+        print("this store tunes suggestions only; it never grants authority to act (ADR-0012).")
         return 0
-    print(f"context store — {len(rows)} feedback entr{'y' if len(rows) == 1 else 'ies'}:")
-    for row in rows:
-        print(
-            f"  {row['created_utc']}  {row['decision']:<8} {row['suggestion_id']}"
-            + (f" — {row['reason']}" if row["reason"] else "")
-        )
+    if rows:
+        print(f"feedback — {len(rows)} entr{'y' if len(rows) == 1 else 'ies'}:")
+        for row in rows:
+            print(
+                f"  {row['created_utc']}  {row['decision']:<8} {row['suggestion_id']}"
+                + (f" — {row['reason']}" if row["reason"] else "")
+            )
+    if prefs:
+        print(f"preferences — {len(prefs)}:")
+        for key, value in prefs.items():
+            print(f"  {key} = {value}")
+    if rules:
+        print(f"house rules — {len(rules)}:")
+        for rule in rules:
+            print(f"  [{rule['id']}] {rule['rule_text']}")
     print("this store tunes suggestions only; it never grants authority to act (ADR-0012).")
     return 0
 
@@ -957,6 +1035,81 @@ def _cmd_skill(args: argparse.Namespace) -> int:
     return 2
 
 
+def _cmd_grow(args: argparse.Namespace) -> int:
+    """Supervised growth (ADR-0012 M8d): draft, list, show, prune, export."""
+    from jarvis.knowledge.store import load_kb
+    from jarvis.planner.grow import (
+        draft_fact,
+        draft_skill,
+        export_proposal,
+        list_proposals,
+        prune_proposal,
+        show_proposal,
+    )
+
+    try:
+        if args.grow_command == "fact":
+            fact: dict[str, object] = {
+                "id": args.fact_id,
+                "topic": args.topic,
+                "claim": args.claim,
+                "patterns": [pat.strip() for pat in args.pattern.split(",") if pat.strip()],
+                "sources": json.loads(args.sources),
+            }
+            if args.verify_kind:
+                verify: dict[str, object] = {"kind": args.verify_kind}
+                if args.verify_arg:
+                    verify["arg"] = args.verify_arg
+                fact["verify"] = verify
+            try:
+                load_kb()  # prove the live store loads before drafting against it
+            except Exception as exc:  # pragma: no cover - defensive
+                print(f"error: live KB unusable: {exc}", file=sys.stderr)
+                return 1
+            result = draft_fact(fact, rationale=args.rationale)
+            print(f"drafted fact proposal: {result['path']}")
+            print("the citation-required store accepted it; promote via: jarvis grow export")
+            return 0
+        if args.grow_command == "skill":
+            pack_file = Path(args.pack_file)
+            result = draft_skill(pack_file, rationale=args.rationale)
+            print(f"drafted skill proposal: {result['path']}")
+            print("owner installs it via: jarvis --yes skill install <file> (evals re-run)")
+            return 0
+        if args.grow_command == "list":
+            rows = list_proposals()
+            if not rows:
+                print("no growth proposals pending")
+                return 0
+            for row in rows:
+                print(
+                    f"  [{row['kind']}] {row['id']:<28} proposed {row['proposed_utc']}"
+                    + (f" — {row['rationale']}" if row["rationale"] else "")
+                )
+            return 0
+        if args.grow_command == "show":
+            print(show_proposal(args.proposal_id))
+            return 0
+        if args.grow_command == "prune":
+            if prune_proposal(args.proposal_id):
+                print(f"pruned {args.proposal_id}")
+                return 0
+            print(f"no proposal {args.proposal_id!r}", file=sys.stderr)
+            return 2
+        # export
+        exported = export_proposal(args.proposal_id, Path(args.out))
+        print(f"exported [{exported['kind']}] {args.proposal_id} -> {exported['artifact']}")
+        print("owner actions (JARVIS never opens or merges PRs):")
+        commands = exported["commands"]
+        assert isinstance(commands, list)
+        for command in commands:
+            print(f"  {command}")
+        return 0
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Policy-state integrity: baseline, drift verification, canaries (M9c)."""
     from jarvis.safety import integrity
@@ -1196,11 +1349,81 @@ def build_parser() -> argparse.ArgumentParser:
     p_suggest_rej.set_defaults(func=_cmd_suggest)
     p_suggest.set_defaults(func=_cmd_suggest)
 
-    p_context = sub.add_parser("context", help="inspect the local context store (M8b grows it)")
+    p_context = sub.add_parser(
+        "context", help="local context store: show/prefer/rule/routines/forget (M8b)"
+    )
     p_context_sub = p_context.add_subparsers(dest="context_command")
     p_context_show = p_context_sub.add_parser("show", help="show everything stored about you")
     p_context_show.set_defaults(func=_cmd_context)
+    p_ctx_prefer = p_context_sub.add_parser(
+        "prefer", help="set a preference (e.g. suppress.undo=1); tunes suggestions only"
+    )
+    p_ctx_prefer.add_argument("key")
+    p_ctx_prefer.add_argument("value", nargs="?", default="")
+    p_ctx_prefer.add_argument("--unset", action="store_true")
+    p_ctx_prefer.set_defaults(func=_cmd_context)
+    p_ctx_rule = p_context_sub.add_parser("rule", help="house rules: add (default) or --remove")
+    p_ctx_rule.add_argument("text", nargs="*", help="rule text, e.g. never touch docker")
+    p_ctx_rule.add_argument("--remove", dest="remove_id", default="")
+    p_ctx_rule.set_defaults(func=_cmd_context)
+    p_ctx_routines = p_context_sub.add_parser(
+        "routines", help="inferred routines from the journal (read-only, never persisted)"
+    )
+    p_ctx_routines.set_defaults(func=_cmd_context)
+    p_ctx_forget = p_context_sub.add_parser(
+        "forget", help="delete the ENTIRE context store (consent-gated, destructive)"
+    )
+    p_ctx_forget.set_defaults(func=_cmd_context)
     p_context.set_defaults(func=_cmd_context)
+
+    p_grow = sub.add_parser(
+        "grow", help="supervised growth: draft fact/skill proposals; owner promotes (M8d)"
+    )
+    p_grow_sub = p_grow.add_subparsers(dest="grow_command", required=True)
+    p_grow_fact = p_grow_sub.add_parser(
+        "fact", help="draft a KB fact proposal (validated by the citation-required store)"
+    )
+    p_grow_fact.add_argument("--id", dest="fact_id", required=True)
+    p_grow_fact.add_argument("--topic", required=True)
+    p_grow_fact.add_argument("--claim", required=True)
+    p_grow_fact.add_argument("--pattern", required=True, help="comma-separated question patterns")
+    p_grow_fact.add_argument(
+        "--sources", required=True, help="JSON list of sources (kind/ref[/url])"
+    )
+    p_grow_fact.add_argument(
+        "--verify-kind",
+        default="",
+        choices=[
+            "",
+            "file_equals",
+            "file_exists",
+            "os_release_field",
+            "binary_present",
+            "command_ok",
+        ],
+    )
+    p_grow_fact.add_argument("--verify-arg", default="")
+    p_grow_fact.add_argument("--rationale", default="")
+    p_grow_fact.set_defaults(func=_cmd_grow)
+    p_grow_skill = p_grow_sub.add_parser(
+        "skill", help="draft a skill-pack proposal (validated by the M9b machinery)"
+    )
+    p_grow_skill.add_argument("pack_file")
+    p_grow_skill.add_argument("--rationale", default="")
+    p_grow_skill.set_defaults(func=_cmd_grow)
+    for name, help_text, extra in (
+        ("list", "list pending growth proposals", False),
+        ("show", "print a proposal's full JSON", False),
+        ("prune", "delete a proposal", False),
+        ("export", "export the ready-to-PR artifact + owner commands", True),
+    ):
+        p_grow_action = p_grow_sub.add_parser(name, help=help_text)
+        if extra:
+            p_grow_action.add_argument("--out", required=True)
+            p_grow_action.add_argument("proposal_id")
+        else:
+            p_grow_action.add_argument("proposal_id", nargs="?" if name == "list" else None)
+        p_grow_action.set_defaults(func=_cmd_grow)
 
     p_mcp = sub.add_parser("mcp", help="Model Context Protocol surface (ADR-0013 M9a)")
     p_mcp_sub = p_mcp.add_subparsers(dest="mcp_command", required=True)

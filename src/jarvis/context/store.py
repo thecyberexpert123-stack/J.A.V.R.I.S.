@@ -3,6 +3,9 @@
 Local, inspectable, deletable. Context tunes what JARVIS *suggests* — it never
 grants authority to act.
 
+M8b growth (ADR-0012): explicit preferences and house rules join the
+ledger in the same store — still local, inspectable, deletable; still
+tuning-only (they shape what is *suggested*, never what is allowed).
 M9c hardening (ADR-0013): feedback text is untrusted ingress — it is scanned
 for injection patterns at write time, and every hashed entry carries a content
 hash chained into a table digest (``store_meta.chain_digest``), so silent row
@@ -35,6 +38,18 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE TABLE IF NOT EXISTS store_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS preferences (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_utc TEXT NOT NULL,
+    entry_hash TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS rules (
+    id TEXT PRIMARY KEY,
+    rule_text TEXT NOT NULL,
+    created_utc TEXT NOT NULL,
+    entry_hash TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -121,15 +136,20 @@ class ContextStore:
         self._conn.commit()
 
     def _refresh_digest(self) -> None:
-        rows = self._conn.execute(
-            "SELECT entry_hash FROM feedback WHERE entry_hash != ''"
-        ).fetchall()
-        digest = _chain_digest([str(r["entry_hash"]) for r in rows])
-        self._conn.execute(
-            "INSERT INTO store_meta (key, value) VALUES ('chain_digest', ?)"
-            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (digest,),
-        )
+        def rehash(table: str, meta_key: str) -> None:
+            rows = self._conn.execute(
+                f"SELECT entry_hash FROM {table} WHERE entry_hash != ''"
+            ).fetchall()
+            digest = _chain_digest([str(r["entry_hash"]) for r in rows])
+            self._conn.execute(
+                "INSERT INTO store_meta (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (meta_key, digest),
+            )
+
+        rehash("feedback", "chain_digest")
+        rehash("preferences", "chain_digest_preferences")
+        rehash("rules", "chain_digest_rules")
 
     def decisions(self) -> dict[str, str]:
         rows = self._conn.execute("SELECT suggestion_id, decision FROM feedback").fetchall()
@@ -172,20 +192,145 @@ class ContextStore:
                 "SELECT value FROM store_meta WHERE key = 'chain_digest'"
             ).fetchone()
             digest_ok = _chain_digest(hashes) == (str(stored["value"]) if stored else "")
+
+        def check_table(
+            table: str, meta_key: str, columns: tuple[str, str, str]
+        ) -> tuple[bool, bool, int]:
+            """(content_ok, digest_ok, hashed_count) — content hashes are
+            recomputed from row values, so edits are caught, not just
+            additions/deletions."""
+            rows_t = self._conn.execute(f"SELECT * FROM {table}").fetchall()
+            hashes_t: list[str] = []
+            for row_t in rows_t:
+                stored_hash = str(row_t["entry_hash"])
+                if not stored_hash:
+                    continue  # legacy row: counted, not verifiable
+                recomputed = _row_hash(
+                    row_t[columns[0]], row_t[columns[1]], row_t[columns[2]], "", ""
+                )
+                if recomputed != stored_hash:
+                    return False, False, len(hashes_t)
+                hashes_t.append(stored_hash)
+            stored_t = self._conn.execute(
+                "SELECT value FROM store_meta WHERE key = ?", (meta_key,)
+            ).fetchone()
+            if not hashes_t:
+                # Empty table: ok when never written or consistent with the
+                # store's own refresh (sha256("")); a raw-SQL deletion without
+                # refresh leaves a stale digest and is flagged here.
+                if stored_t is None:
+                    return True, True, 0
+                return True, _chain_digest([]) == str(stored_t["value"]), 0
+            digest_ok_t = _chain_digest(hashes_t) == (str(stored_t["value"]) if stored_t else False)
+            return True, digest_ok_t, len(hashes_t)
+
+        prefs_content_ok, prefs_ok, prefs_n = check_table(
+            "preferences", "chain_digest_preferences", ("key", "value", "created_utc")
+        )
+        rules_content_ok, rules_ok, rules_n = check_table(
+            "rules", "chain_digest_rules", ("id", "rule_text", "created_utc")
+        )
         detail = ""
         if mismatched:
             detail = "content hash mismatch for: " + ", ".join(sorted(mismatched)[:3])
         elif digest_ok is False:
-            detail = "chain digest mismatch (rows edited in, added, or removed without re-hash)"
+            detail = "feedback chain digest mismatch (rows edited in, added, or removed)"
+        elif not prefs_content_ok:
+            detail = "preference row content hash mismatch (edited after write)"
+        elif not rules_content_ok:
+            detail = "rule row content hash mismatch (edited after write)"
+        elif not prefs_ok:
+            detail = "preferences chain digest mismatch"
+        elif not rules_ok:
+            detail = "rules chain digest mismatch"
         return {
             "total": len(rows),
             "hashed": len(hashes),
             "legacy_unhashed": legacy,
             "row_hashes_ok": not mismatched,
             "chain_digest_ok": digest_ok,
-            "ok": not mismatched and digest_ok is not False,
+            "preferences_hashed": prefs_n,
+            "preferences_ok": prefs_content_ok and prefs_ok,
+            "rules_hashed": rules_n,
+            "rules_ok": rules_content_ok and rules_ok,
+            "ok": (
+                not mismatched
+                and digest_ok is not False
+                and prefs_content_ok
+                and prefs_ok
+                and rules_content_ok
+                and rules_ok
+            ),
             "detail": detail,
         }
+
+    # -- M8b: explicit preferences and house rules (tuning-only) -------------
+
+    def set_preference(self, key: str, value: str) -> None:
+        if not key or len(key) > 64 or not value or len(value) > 200:
+            raise ValueError("preference key must be 1..64 chars, value 1..200 chars")
+        _scan_untrusted("preference value", value)
+        created = _utcnow()
+        entry_hash = _row_hash(key, value, created, "", "")
+        self._conn.execute(
+            "INSERT INTO preferences (key, value, created_utc, entry_hash) VALUES (?,?,?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
+            " created_utc=excluded.created_utc, entry_hash=excluded.entry_hash",
+            (key, value, created, entry_hash),
+        )
+        self._refresh_digest()
+        self._conn.commit()
+
+    def unset_preference(self, key: str) -> bool:
+        cursor = self._conn.execute("DELETE FROM preferences WHERE key = ?", (key,))
+        self._refresh_digest()
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def preferences(self) -> dict[str, str]:
+        rows = self._conn.execute("SELECT key, value FROM preferences ORDER BY key").fetchall()
+        return {str(r["key"]): str(r["value"]) for r in rows}
+
+    def add_rule(self, text: str) -> str:
+        text = text.strip()
+        if not text or len(text) > 200:
+            raise ValueError("house rule must be 1..200 chars")
+        _scan_untrusted("house rule", text)
+        rule_id = "rule-" + _row_hash(text, "", "", "", "")[:12]
+        created = _utcnow()
+        entry_hash = _row_hash(rule_id, text, created, "", "")
+        self._conn.execute(
+            "INSERT INTO rules (id, rule_text, created_utc, entry_hash) VALUES (?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET rule_text=excluded.rule_text,"
+            " created_utc=excluded.created_utc, entry_hash=excluded.entry_hash",
+            (rule_id, text, created, entry_hash),
+        )
+        self._refresh_digest()
+        self._conn.commit()
+        return rule_id
+
+    def remove_rule(self, rule_id: str) -> bool:
+        cursor = self._conn.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
+        self._refresh_digest()
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def rule_rows(self) -> list[dict[str, object]]:
+        rows = self._conn.execute(
+            "SELECT id, rule_text, created_utc FROM rules ORDER BY created_utc"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def forget_everything(self) -> dict[str, int]:
+        """Delete the entire context store contents (owner-invoked; consented)."""
+        counts: dict[str, int] = {}
+        for table in ("feedback", "preferences", "rules"):
+            row = self._conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()
+            counts[table] = int(row["n"]) if row else 0
+            self._conn.execute(f"DELETE FROM {table}")
+        self._conn.execute("DELETE FROM store_meta")
+        self._conn.commit()
+        return counts
 
     def close(self) -> None:
         self._conn.close()

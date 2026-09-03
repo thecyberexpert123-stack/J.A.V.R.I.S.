@@ -233,12 +233,10 @@ def test_cli_context_show(
     main(["suggest", "accept", "refresh:stale"])
     capsys.readouterr()
     assert main(["--json", "context", "show"]) == 0
-    rows = [
-        d
-        for d in _json_docs(capsys.readouterr().out)
-        if isinstance(d, dict) and "suggestion_id" in d
-    ]
-    assert rows and rows[-1]["suggestion_id"] == "refresh:stale"
+    docs = [d for d in _json_docs(capsys.readouterr().out) if isinstance(d, dict)]
+    assert docs and isinstance(docs[-1].get("feedback"), list)  # M8b: structured store view
+    feedback = docs[-1]["feedback"]
+    assert feedback and feedback[-1]["suggestion_id"] == "refresh:stale"
 
 
 def _json_docs(text: str) -> list[object]:  # type: ignore[type-arg]

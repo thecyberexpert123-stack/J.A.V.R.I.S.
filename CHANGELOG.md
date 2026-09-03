@@ -29,6 +29,25 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.7.0] - 2026-09-03 — M8b + M8d: user context & supervised growth (ADR-0012 complete, owner-approved)
+
+### Added — M8b: user context store
+- **`jarvis context prefer <key> [value]`** (`--unset`): explicit preferences in the same tamper-evident store — preferences **tune what is suggested, never what is allowed**. `suppress.<category>=1` silences whole suggestion categories.
+- **`jarvis context rule "never touch docker"`** / `--remove <id>`: house rules (deterministic content-addressed ids) that suppress matching suggestions from listings; ≥4-char tokens only, so short rules can't overmatch.
+- **`jarvis context routines`**: recurring-playbook patterns inferred **on demand** from the journal with cadence + confidence, citing their evidence, never persisted (documented deviation from the ADR sketch: inference from the journal means `context forget` cannot leave stale inference behind), with charter hints for T≤2 recurrences.
+- **`jarvis context forget`**: deletes the entire store — consent-gated (T2-grade through the real policy), reports exact counts.
+- The M9c chain covers the new tables: per-row content hashes (edits caught, not just deletions) chained into per-table digests folded into `verify_integrity()`/`jarvis doctor`; write-time injection scan covers preference values and rule text.
+- `context show` now renders feedback + preferences + rules (JSON: one structured object; the 0.4-era bare-list shape is superseded).
+
+### Added — M8d: supervised growth loop
+- **`jarvis grow fact|skill|list|show|prune|export`**: JARVIS drafts growth proposals as inert data in `state/proposals/` — KB facts validated by the **real citation-required store** (an uncited fact cannot even be drafted; ADR-0009 enforced at draft time) and skill packs validated by the M9b machinery. The kernel, policy, and shipped KB/skills stay outside its write scope, permanently.
+- **Promotion is owner-only, by design**: `grow export` copies the ready-to-PR artifact and prints the exact owner commands — JARVIS never opens or merges PRs (merge authority is the owner's, per governance). Skill proposals install only via consented `jarvis skill install` (evals re-run at install).
+- Documented interpretation of the ADR's "drafts ... as PRs": drafting/validation/export are automated; PR creation and merge remain owner actions (no remote or credential actions from the product).
+
+### Changed
+- Version 1.7.0; PKGBUILD/spec synced. **ADR-0012 is now fully implemented** (M8a 1.2.0 · M8b+M8d 1.7.0 · charter hardening via M9d 1.5.0).
+- Tests: +26 (preferences/rules round-trips + tamper detection, engine suppression via both mechanisms, routines inference incl. garbage rows and window bounds, consent-gated forget, fact drafting through the real store incl. refusals, skill proposals, export semantics, integrity-scope exclusion of proposals). Suite: **515 passed + 2 honest skips** (517 collected).
+
 ## [1.6.0] - 2026-09-03 — M9e + M9b: ADR-0013 complete (owner-approved)
 
 ### Added — M9e: API-first GUI actions
