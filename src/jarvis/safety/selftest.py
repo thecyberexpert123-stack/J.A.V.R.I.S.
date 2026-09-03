@@ -108,7 +108,9 @@ def run_battery() -> list[CheckResult]:
 
         # GUI injection cannot fire (headless: unavailable; graphical: no consent/focus)
         try:
-            service = GuiService(sentinel, ApprovalPolicy(yes=False), journal, env={})
+            service = GuiService(
+                sentinel, ApprovalPolicy(yes=False, stdin=io.StringIO()), journal, env={}
+            )
             gui_outcome = service.type_text("should-never-land")
             ok = gui_outcome.status != "done"
             check("GUI injection guarded", ok, f"unexpected outcome: {gui_outcome.status}")

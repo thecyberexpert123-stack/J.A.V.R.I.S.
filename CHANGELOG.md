@@ -19,6 +19,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 - `.gitignore` — generated eval JSON excluded from version control; curated summaries are committed instead (`evals/results/`).
 
+## [1.2.1] - 2026-09-03 — Security & quality audit fixes
+
+### Fixed
+- **P1 security**: knowledge fetch now re-validates **every redirect** against the URL allowlist (`SafeRedirectHandler`); previously only the initial URL was checked and redirects were followed blindly. All request sites routed through the validating opener (+2 tests).
+- **P1 bug**: `jarvis safety-check` could **hang interactively** on graphical desktops (GUI battery's approval policy defaulted to the TTY stdin and would prompt with a focused window). Battery now uses a non-tty stdin.
+- **P2 packaging**: install-test rpm version now derived from the wheel filename and verified via `rpm -q` (the tested rpm was previously mislabeled 1.0.0 while containing 1.2.0); spec/PKGBUILD synced to 1.2.0.
+- P2 hygiene: `gui/detect.py` normal imports; dev-env setuptools upgraded past published advisory (build-system already required ≥68; jarvis has zero runtime deps).
+
+### Audit
+Full findings, soundness checks, and documented limitations: `evals/results/AUDIT-1.2.1.md`. Tests: **372 passed + 2 honest skips**.
+
 ## [1.2.0] - 2026-09-03 — M8a Adaptive initiative: suggestion engine
 
 ### Added (ADR-0012 — "proactivity proposes; consent executes")

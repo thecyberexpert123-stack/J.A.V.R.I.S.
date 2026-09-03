@@ -14,9 +14,12 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from http.client import HTTPMessage
 from pathlib import Path
+from typing import IO
 
 from jarvis.journal.sqlite import state_dir
 
@@ -42,6 +45,37 @@ ALLOWED_PREFIXES: tuple[str, ...] = (
 
 class OnlineDisabled(RuntimeError):
     """JARVIS_ONLINE_DOCS is not enabled (this is the normal state)."""
+
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every redirect against the allowlist BEFORE following it.
+
+    Without this, a redirect from an allowlisted host would be followed
+    blindly — the allowlist must bound the whole redirect chain, not just the
+    first hop.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        _check_allowed(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER: urllib.request.OpenerDirector | None = None
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    global _OPENER
+    if _OPENER is None:
+        _OPENER = urllib.request.build_opener(SafeRedirectHandler())
+    return _OPENER
 
 
 class OnlineRefused(RuntimeError):
@@ -81,7 +115,7 @@ def verify_kernel_doc(repo: str, ref: str, *, timeout_s: float = 20.0) -> Online
     )
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        with _opener().open(req, timeout=timeout_s) as resp:
             size = len(resp.read())
             return OnlineCheck(ref, True, resp.status, f"{size} bytes fetched", url, stamp)
     except urllib.error.HTTPError as exc:
@@ -96,7 +130,7 @@ def verify_url(url: str, *, timeout_s: float = 20.0) -> OnlineCheck:
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "jarvis-kb"})
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        with _opener().open(req, timeout=timeout_s) as resp:
             return OnlineCheck(url, True, resp.status, "reachable", url, stamp)
     except urllib.error.HTTPError as exc:
         # some static hosts reject HEAD; fall back to GET range probe
@@ -110,7 +144,7 @@ def verify_url(url: str, *, timeout_s: float = 20.0) -> OnlineCheck:
 def _get_probe(url: str, *, timeout_s: float, stamp: str) -> OnlineCheck:
     req = urllib.request.Request(url, headers={"User-Agent": "jarvis-kb", "Range": "bytes=0-64"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        with _opener().open(req, timeout=timeout_s) as resp:
             return OnlineCheck(url, True, resp.status, "reachable (GET probe)", url, stamp)
     except urllib.error.URLError as exc:
         return OnlineCheck(url, False, None, f"unreachable: {exc.reason}", url, stamp)

@@ -48,14 +48,18 @@ case "$DISTRO" in
         dnf install -y rpm-build unzip >/dev/null || fail "rpm-build install"
         RPMB="$(mktemp -d)"
         mkdir -p "$RPMB/SOURCES" "$RPMB/SPECS" "$RPMB/RPMS"
-        cp "$DIST"/jarvis_agent-*.whl \
-            "$RPMB/SOURCES/jarvis-agent-1.0.0-py3-none-any.whl" || fail "wheel copy"
-        sed "s/^Version:.*/Version: 1.0.0/" /repo/packaging/rpm/jarvis-agent.spec \
+        WHEEL_FILE="$(basename "$DIST"/jarvis_agent-*.whl)" || fail "wheel glob"
+        RPMVER="${WHEEL_FILE#jarvis_agent-}"
+        RPMVER="${RPMVER%%-*}"
+        cp "$DIST/$WHEEL_FILE" "$RPMB/SOURCES/jarvis-agent-$RPMVER-py3-none-any.whl" \
+            || fail "wheel copy"
+        sed "s/^Version:.*/Version: $RPMVER/" /repo/packaging/rpm/jarvis-agent.spec \
             > "$RPMB/SPECS/jarvis-agent.spec"
         rpmbuild -bb --define "_topdir $RPMB" "$RPMB/SPECS/jarvis-agent.spec" \
             > "$RPMB/build.log" 2>&1 || { tail -20 "$RPMB/build.log"; fail "rpmbuild"; }
         dnf install -y "$RPMB"/RPMS/noarch/jarvis-agent-*.rpm >/dev/null \
             || fail "dnf install of .rpm"
+        rpm -q jarvis-agent | grep -q "$RPMVER" || fail "rpm version mismatch: $(rpm -q jarvis-agent)"
         smoke
         ;;
     arch)

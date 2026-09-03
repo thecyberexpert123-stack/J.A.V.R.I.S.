@@ -273,3 +273,36 @@ def test_cli_facts_json(
     data = json.loads(capsys.readouterr().out)
     assert len(data) == 4
     assert all(entry["sources"] >= 1 for entry in data)
+
+
+# -- redirect guard (audit hardening) ------------------------------------------
+
+
+def test_safe_redirect_handler_refuses_off_allowlist_redirects() -> None:
+    import urllib.request
+
+    from jarvis.knowledge.fetch import OnlineRefused, SafeRedirectHandler
+
+    handler = SafeRedirectHandler()
+    request = urllib.request.Request("https://man7.org/linux/man-pages/man1/uname.1.html")
+    with pytest.raises(OnlineRefused):
+        handler.redirect_request(
+            request,
+            fp=None,
+            code=302,
+            msg="Found",
+            headers=None,
+            newurl="https://evil.example.com/payload",
+        )
+
+
+def test_all_fetch_requests_use_the_safe_opener() -> None:
+    import inspect
+
+    from jarvis.knowledge import fetch
+
+    source = inspect.getsource(fetch)
+    assert "urllib.request.urlopen" not in source, (
+        "raw urlopen bypasses the redirect-validating opener"
+    )
+    assert source.count("_opener().open(") >= 3

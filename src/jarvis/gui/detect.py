@@ -6,6 +6,7 @@ normal, honestly-reported state — never an error.
 
 from __future__ import annotations
 
+import os
 import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -70,7 +71,7 @@ def probe(
     which_fn: _Which | None = None,
 ) -> GuiEnvironment:
     """Detect the GUI environment from process env + PATH tool probes."""
-    source = env if env is not None else dict(__import__("os").environ)
+    source = env if env is not None else dict(os.environ)
     which = which_fn if which_fn is not None else shutil.which
 
     wayland = source.get("WAYLAND_DISPLAY", "").strip()
@@ -106,7 +107,7 @@ def probe(
 
 def ydotool_socket(env: Mapping[str, str] | None = None) -> Path:
     """Default ydotoold socket path (respects $YDOTOOL_SOCKET)."""
-    source = env if env is not None else dict(__import__("os").environ)
+    source = env if env is not None else dict(os.environ)
     raw = source.get("YDOTOOL_SOCKET", "").strip()
     if raw:
         return Path(raw)
