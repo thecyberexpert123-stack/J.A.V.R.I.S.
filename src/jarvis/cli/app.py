@@ -1190,6 +1190,14 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_mcp_describe(args: argparse.Namespace) -> int:
+    """Print the machine-readable front-end contract (J.A.V.R.I.S.-GUI wiring)."""
+    from jarvis.cli.mcp_server import frontend_contract
+
+    print(json.dumps(frontend_contract(), indent=2, sort_keys=True))
+    return 0
+
+
 def _cmd_mcp_serve(args: argparse.Namespace) -> int:
     """Serve the MCP tool/resource surface on stdio (ADR-0013 M9a)."""
     from jarvis.cli.mcp_server import MCPServer
@@ -1436,6 +1444,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_mcp_serve.set_defaults(func=_cmd_mcp_serve)
+    p_mcp_describe = p_mcp_sub.add_parser(
+        "describe",
+        help="print the machine-readable front-end contract (transport, tools, consent)",
+    )
+    p_mcp_describe.set_defaults(func=_cmd_mcp_describe)
 
     p_doctor = sub.add_parser(
         "doctor",

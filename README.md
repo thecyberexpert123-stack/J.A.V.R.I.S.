@@ -152,6 +152,16 @@ $ jarvis grow export t.f --out out/            # artifact + owner commands (owne
 
 Context is local, inspectable (`context show`), deletable, and tamper-evident (`jarvis doctor` verifies its hash chains). Growth proposals are inert data; the kernel, policy, and shipped knowledge stay outside JARVIS's write scope — promotion runs through owner-reviewed PRs and consented installs only.
 
+## Front-ends (J.A.V.R.I.S.-GUI)
+
+Native HUD front-end (owner's [J.A.V.R.I.S.-GUI](https://github.com/thecyberexpert123-stack/J.A.V.R.I.S.-GUI) project) wires to this kernel over the MCP stdio surface:
+
+```console
+$ jarvis mcp describe    # machine-readable front-end contract (javris-frontend/1)
+```
+
+A front-end is another untrusted-ingress surface: it renders, it never widens authority — T2 actions need the owner's explicit per-call consent in the UI; `docs/integration/JAVRIS-GUI.md` is the wiring contract, and CI asserts the published contract against live server behavior.
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in

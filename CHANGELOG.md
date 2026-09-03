@@ -29,6 +29,17 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.8.0] - 2026-09-03 — J.A.V.R.I.S.-GUI wiring: front-end contract (owner-directed)
+
+### Added
+- **`jarvis mcp describe`**: the machine-readable front-end contract (`javris-frontend/1`) — transport/spawn/framing, handshake with version exchange, every tool with its declared consent semantics (`read-only` / `explicit-allow`), resources, the consent model (a front-end never synthesizes `allow:true`; charters remain the only pre-authorization), a state mapping onto the GUI's explicit `AssistantState` machine (legal transitions only), and a verbatim example session.
+- **`docs/integration/JAVRIS-GUI.md`**: the wiring contract for the owner's [J.A.V.R.I.S.-GUI](https://github.com/thecyberexpert123-stack/J.A.V.R.I.S.-GUI) Qt6 HUD — architecture (GUI renders, kernel decides), consent UX (refusal → owner action → per-call `allow:true`), console-verb suggestions for its allow-listed `CommandRouter`, honest `OFFLINE` degradation when `jarvis` is absent, and a deliberate licensing note (protocol is the seam; no code crosses repos until the owner sets this repo's license).
+- **Conformance tests** (`tests/test_frontend_contract.py`): the published descriptor is asserted against LIVE server behavior — tool set, consent labels, CLI/library parity, the example handshake replayed through the real `MCPServer`, and the full consent flow end-to-end (read-only plays; T2 refuses without `allow`, plays with it). The contract and the code cannot drift.
+- Tests: +6. Suite: **521 passed + 2 honest skips** (523 collected).
+
+### Changed
+- Version 1.8.0; PKGBUILD/spec synced. The GUI implements its QProcess client against the published contract (its repo/branch, its MIT license); this repo owns the server side and the contract.
+
 ## [1.7.0] - 2026-09-03 — M8b + M8d: user context & supervised growth (ADR-0012 complete, owner-approved)
 
 ### Added — M8b: user context store

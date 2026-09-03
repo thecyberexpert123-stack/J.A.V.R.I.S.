@@ -137,6 +137,142 @@ RESOURCES: tuple[dict[str, object], ...] = (
 )
 
 
+# Per-tool consent semantics for front-ends (ADR-0013): the GUI never
+# synthesizes authority — "explicit-allow" tools require an owner action per
+# call, and refusals carry a preview-then-allow hint.
+CONSENT_BY_TOOL: dict[str, str] = {
+    "jarvis_status": "read-only",
+    "jarvis_facts": "read-only",
+    "jarvis_explain": "read-only",
+    "jarvis_suggest": "read-only",
+    "jarvis_preview": "read-only",
+    "jarvis_do": "explicit-allow",
+}
+
+# Mapping onto the J.A.V.R.I.S.-GUI HUD state machine (AssistantState). Every
+# step below is a LEGAL transition in the GUI's explicit transition table.
+STATE_MAPPING: tuple[dict[str, str], ...] = (
+    {
+        "gui_state": "BOOTING",
+        "when": "frontend spawn of `jarvis mcp serve` + initialize handshake",
+    },
+    {
+        "gui_state": "STANDBY",
+        "when": "handshake complete; connection idle (jarvis absent -> OFFLINE, degrade honestly)",
+    },
+    {
+        "gui_state": "PROCESSING",
+        "when": "request in flight (explain/facts/preview/status/suggest/do)",
+    },
+    {
+        "gui_state": "EXECUTING",
+        "when": "jarvis_do running with the owner's explicit per-call allow",
+    },
+    {"gui_state": "SPEAKING", "when": "result text rendering to the console/log"},
+    {"gui_state": "ERROR", "when": "isError result, consent refusal, or protocol error"},
+)
+
+
+def _wire(client_id: int, method: str, params: dict[str, object]) -> str:
+    """Compact single-line JSON-RPC frame for the published examples."""
+    frame: dict[str, object] = {"jsonrpc": "2.0", "id": client_id, "method": method}
+    if params:
+        frame["params"] = params
+    return json.dumps(frame, separators=(", ", ":"))
+
+
+def frontend_contract() -> dict[str, object]:
+    """Machine-readable front-end contract (ADR-0013 M9a; J.A.V.R.I.S.-GUI).
+
+    Published for front-end implementers and asserted against the live server
+    by tests, so the descriptor and the code cannot drift apart.
+    """
+    tools: list[dict[str, object]] = []
+    for spec in TOOL_SPECS:
+        entry = dict(spec)
+        entry["consent"] = CONSENT_BY_TOOL[str(spec["name"])]
+        tools.append(entry)
+    return {
+        "contract": "javris-frontend/1",
+        "transport": {
+            "kind": "stdio-newline-jsonrpc-2.0",
+            "spawn": ["jarvis", "mcp", "serve"],
+            "framing": (
+                "one JSON-RPC 2.0 object per line; responses newline-terminated;"
+                " stdout carries protocol frames only (server diagnostics go to stderr)"
+            ),
+        },
+        "handshake": {
+            "client_sends": _wire(
+                client_id=1, method="initialize", params={"protocolVersion": "<YYYY-MM-DD>"}
+            ),
+            "server_echoes_client_date_version": True,
+            "fallback_protocol_version": _FALLBACK_PROTOCOL_VERSION,
+            "then": "notifications/initialized (no response), then tools/list",
+            "server_identity": (
+                "result.serverInfo (name + jarvis version) — version-handshake for front-ends"
+            ),
+        },
+        "tools": tools,
+        "resources": [str(r["uri"]) for r in RESOURCES],
+        "consent_model": {
+            "read-only": "no owner action required",
+            "explicit-allow": (
+                "T2 (system-level) plays only when arguments carry allow:true, which MUST"
+                " map to an explicit owner action in the front-end (button/dialog), once"
+                " per call; without it the kernel refuses with a preview-then-allow hint;"
+                " T3 is refused unconditionally"
+            ),
+            "invariant": (
+                "the front-end never widens authority;"
+                " charters (jarvis charter) remain the only pre-authorization"
+            ),
+        },
+        "state_mapping": list(STATE_MAPPING),
+        "example_session": [
+            {"dir": "c->s", "line": _wire(1, "initialize", {"protocolVersion": "2025-03-26"})},
+            {"dir": "s->c", "note": "result: protocolVersion echoed, serverInfo, capabilities"},
+            {"dir": "c->s", "line": '{"jsonrpc": "2.0", "method": "notifications/initialized"}'},
+            {
+                "dir": "c->s",
+                "line": _wire(
+                    2,
+                    "tools/call",
+                    {
+                        "name": "jarvis_explain",
+                        "arguments": {"question": "what is the kernel type"},
+                    },
+                ),
+            },
+            {"dir": "s->c", "note": "result.content[0].text = JSON payload; isError=false"},
+            {
+                "dir": "c->s",
+                "line": _wire(
+                    3,
+                    "tools/call",
+                    {"name": "jarvis_do", "arguments": {"request": "upgrade the whole system"}},
+                ),
+            },
+            {
+                "dir": "s->c",
+                "note": "isError=true, payload.outcome.status=refused -> front-end asks the owner",
+            },
+            {
+                "dir": "c->s",
+                "line": _wire(
+                    4,
+                    "tools/call",
+                    {
+                        "name": "jarvis_do",
+                        "arguments": {"request": "upgrade the whole system", "allow": True},
+                    },
+                ),
+            },
+            {"dir": "s->c", "note": "only after the owner explicitly consented in the UI"},
+        ],
+    }
+
+
 def _facts_payload(topic: str | None) -> dict[str, object]:
     kb = load_kb()
     facts = kb.facts
