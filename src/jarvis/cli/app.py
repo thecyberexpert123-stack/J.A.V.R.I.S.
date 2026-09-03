@@ -8,9 +8,11 @@ Exit codes: 0 success/dry-run · 1 execution or verification failure ·
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 from jarvis import __version__
 from jarvis.context.store import ContextStore, default_context_path
@@ -700,6 +702,20 @@ def _cmd_context(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mcp_serve(args: argparse.Namespace) -> int:
+    """Serve the MCP tool/resource surface on stdio (ADR-0013 M9a)."""
+    from jarvis.cli.mcp_server import MCPServer
+
+    print(
+        "[jarvis] MCP server on stdio: newline-delimited JSON-RPC 2.0; "
+        "consent tiers unchanged (T2 needs per-call allow:true, T3 refused)",
+        file=sys.stderr,
+    )
+    stdin = cast(io.TextIOBase, sys.stdin)
+    stdout = cast(io.TextIOBase, sys.stdout)
+    return MCPServer(stdin, stdout).serve()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -850,6 +866,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_context_show = p_context_sub.add_parser("show", help="show everything stored about you")
     p_context_show.set_defaults(func=_cmd_context)
     p_context.set_defaults(func=_cmd_context)
+
+    p_mcp = sub.add_parser("mcp", help="Model Context Protocol surface (ADR-0013 M9a)")
+    p_mcp_sub = p_mcp.add_subparsers(dest="mcp_command", required=True)
+    p_mcp_serve = p_mcp_sub.add_parser(
+        "serve",
+        help=(
+            "serve fixed tools (status/facts/explain/suggest/preview/do) and "
+            "resources over stdio JSON-RPC; an MCP client fronts the same "
+            "kernel — consent tiers unchanged, no passthrough exec"
+        ),
+    )
+    p_mcp_serve.set_defaults(func=_cmd_mcp_serve)
 
     return parser
 

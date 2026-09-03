@@ -73,6 +73,20 @@ Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
 commands — it proposes intents that must pass the same validators as the
 deterministic engine (ADR-0007).
 
+## MCP surface (ADR-0013 M9a)
+
+`jarvis mcp serve` speaks the Model Context Protocol — newline-delimited JSON-RPC 2.0 on stdio, stdlib-only (no SDK). An MCP client is just another front-end to the same kernel:
+
+- tools: `jarvis_status`, `jarvis_facts`, `jarvis_explain`, `jarvis_suggest`, `jarvis_preview`, `jarvis_do`
+- resources: `kb://facts`, `journal://tasks`
+- consent is unchanged: T2 actions need an explicit per-call `"allow": true`; T3 is refused; there is no free-form-exec passthrough tool
+
+Smoke test:
+
+```console
+$ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n' | jarvis mcp serve
+```
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in

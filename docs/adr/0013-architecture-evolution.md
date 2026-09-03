@@ -1,6 +1,6 @@
 # ADR-0013: Architecture evolution — interoperability, verified skills, memory integrity, safe autonomy
 
-- **Status:** Proposed (2026-09-03) — awaiting owner approval. Research basis: [RESEARCH-agent-landscape-2026.md](../RESEARCH-agent-landscape-2026.md) (OpenClaw, Hermes, Open Interpreter, AutoGPT, OS-Copilot/UFO²/OSWorld field, MCP, skill-security ecosystem; all claims sourced there).
+- **Status:** Accepted (2026-09-03 — owner go-ahead after full presentation of research + proposal). **M9a implemented in 1.3.0** (`jarvis mcp serve`); M9b–M9e await per-phase go. Research basis: [RESEARCH-agent-landscape-2026.md](../RESEARCH-agent-landscape-2026.md) (OpenClaw, Hermes, Open Interpreter, AutoGPT, OS-Copilot/UFO²/OSWorld field, MCP, skill-security ecosystem; all claims sourced there).
 - **Context:** The owner directed a landscape study ("how others work, their disadvantages, then an enhancing architecture"). The study shows the field's systematic failures — unverified persistent state, instruction-pack supply chains, approval-as-boundary, non-determinism in the action path, pure-GUI fragility, autonomy without termination — while JARVIS's kernel already structurally answers several of them (ADR-0007/0008/0009). The gaps are interoperability, an ecosystem surface, memory integrity, safe recurrence, and API-first GUI actions.
 - **Decision — the invariant holds: every new capability enters through the kernel, or it does not enter.** Phased plan (each phase = milestone-sized, gated, independently valuable):
 

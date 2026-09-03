@@ -29,6 +29,19 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.3.0] - 2026-09-03 — M9a: MCP server surface (ADR-0013, owner-approved)
+
+### Added
+- **`jarvis mcp serve`**: a Model Context Protocol server on stdio — newline-delimited JSON-RPC 2.0, **stdlib-only** (ADR-0005 dependency discipline holds; no SDK). Harm model: an MCP client is just another untrusted-ingress front-end, identical in standing to the CLI; nothing bypasses the kernel.
+- **Tools (fixed set — deliberately no free-form-exec passthrough)**: `jarvis_status` (fingerprint) · `jarvis_facts` (cited KB) · `jarvis_explain` (cite-or-abstain) · `jarvis_suggest` (read-only) · `jarvis_preview` (plan + blast radius; never asks, never executes) · `jarvis_do` (deterministic playbook through the same Orchestrator; **T2 requires explicit per-call `"allow": true`**, mapped onto the CLI's `--yes` semantics with a deterministic non-tty stdin; **T3 refused unconditionally**; refusals restated in MCP terms with a preview-then-allow hint).
+- **Resources**: `kb://facts` (all cited facts) · `journal://tasks` (recent journaled tasks).
+- Protocol conformance: initialize (version echo with fallback) / ping / tools+resources discovery; parse-error, invalid-request, method-not-found, invalid-params error codes; notification silence; batch rejection. stdout carries protocol frames only — diagnostics go to stderr.
+- Tests: +27 (protocol frames, tool semantics incl. refusal through the real ApprovalPolicy, execution via scripted runner, CLI wiring). Suite: **399 passed + 2 honest skips** (401 collected).
+
+### Changed
+- Version 1.3.0; `packaging/arch/PKGBUILD` + `packaging/rpm/jarvis-agent.spec` synced from stale 1.2.0 → 1.3.0 (they document the next v-tag; artifacts become fetchable when the owner cuts the v1.3.0 release).
+- ADR-0013 status Proposed → Accepted (owner go-ahead 2026-09-03); M9a implemented, M9b–M9e pending per-phase go.
+
 ## [Unreleased] — M1 container evaluation: 70/70 PASSED
 
 ### Verified (observed, run 33637847042)
