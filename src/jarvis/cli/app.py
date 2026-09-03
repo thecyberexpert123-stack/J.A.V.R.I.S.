@@ -449,7 +449,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:
         for cap, binding in caps.items():
             assert isinstance(binding, dict)
             mark = binding.get("backend") or "unavailable"
-            print(f"  {cap:<11}: {mark} — {binding.get('reason')}")
+            print(f"  {cap:<11}: {mark} [{binding.get('path')}] — {binding.get('reason')}")
         atspi = data["atspi"]
         assert isinstance(atspi, dict)
         print(f"  atspi      detail: {atspi['detail']}")
@@ -886,6 +886,77 @@ def _cmd_charter(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_skill(args: argparse.Namespace) -> int:
+    """Verified skill packs: install/list/remove (ADR-0013 M9b)."""
+    from jarvis.planner.playbooks import PLAYBOOKS
+    from jarvis.planner.skills import SkillError, install_skill, installed_skills, remove_skill
+
+    if args.skill_command == "install":
+        pack_file = Path(args.pack_file)
+        if not pack_file.is_file():
+            print(f"error: no such pack file: {pack_file}", file=sys.stderr)
+            return 2
+        try:
+            candidate = json.loads(pack_file.read_text())
+        except json.JSONDecodeError as exc:
+            print(f"error: pack is not valid JSON: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(candidate, dict):
+            print("error: pack must be a JSON object", file=sys.stderr)
+            return 2
+        playbook = next((pb for pb in PLAYBOOKS if pb.id == candidate.get("playbook")), None)
+        evals = candidate.get("evals")
+        print("skill pack (extends matching vocabulary — read every field):")
+        print(f"  id        : {candidate.get('id', '?')}")
+        print(f"  match     : {candidate.get('match', '?')}")
+        print(
+            f"  playbook  : {candidate.get('playbook', '?')}"
+            + (
+                f" (tier T{int(playbook.tier)}, inherited — packs never set tiers)"
+                if playbook
+                else ""
+            )
+        )
+        prov = candidate.get("provenance")
+        provenance = prov.get("source", "?") if isinstance(prov, dict) else "?"
+        eval_count = len(evals) if isinstance(evals, list) else 0
+        print(f"  evals     : {eval_count} case(s), dry-run now")
+        print(f"  provenance: {provenance}")
+        if not _charter_consent(yes=args.yes, silent=bool(args.json)):
+            print("refused: skill pack not installed (no consent)", file=sys.stderr)
+            return 2
+        try:
+            installed = install_skill(pack_file, source=args.source)
+        except SkillError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"installed: {installed['path']}")
+        print(f"  sha256    : {installed['sha256']}")
+        print("policy state changed — review it, then: jarvis doctor --write-baseline")
+        return 0
+
+    if args.skill_command == "list":
+        rows = installed_skills()
+        if not rows:
+            print("no skill packs installed (install one with: jarvis skill install <file>)")
+            return 0
+        print(f"{'id':<24}{'status':<10}playbook")
+        for row in rows:
+            doc = json.loads(Path(str(row["path"])).read_text())
+            errors = row["errors"]
+            error_list = errors if isinstance(errors, list) else []
+            suffix = (" — " + "; ".join(str(e) for e in error_list)) if error_list else ""
+            print(f"{row['id']!s:<24}{row['status']!s:<10}{doc.get('playbook', '?')}{suffix}")
+        return 0
+
+    # remove
+    if remove_skill(args.skill_id):
+        print(f"removed {args.skill_id} — policy state changed; review: jarvis doctor")
+        return 0
+    print(f"error: no skill pack {args.skill_id!r} (list with: jarvis skill list)", file=sys.stderr)
+    return 2
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Policy-state integrity: baseline, drift verification, canaries (M9c)."""
     from jarvis.safety import integrity
@@ -1211,6 +1282,24 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "run":
             p_ch_action.add_argument("--dry-run", action="store_true")
         p_ch_action.set_defaults(func=_cmd_charter)
+
+    p_skill = sub.add_parser(
+        "skill", help="verified skill packs: install/list/remove (ADR-0013 M9b)"
+    )
+    p_skill_sub = p_skill.add_subparsers(dest="skill_command", required=True)
+    p_sk_install = p_skill_sub.add_parser(
+        "install", help="validate, eval-dry-run, pin, and install a pack (T2 consent)"
+    )
+    p_sk_install.add_argument("pack_file", help="path to a *.skill.json pack")
+    p_sk_install.add_argument(
+        "--source", default="", help="override provenance source label for the receipt"
+    )
+    p_sk_install.set_defaults(func=_cmd_skill)
+    p_sk_list = p_skill_sub.add_parser("list", help="list installed packs with load status")
+    p_sk_list.set_defaults(func=_cmd_skill)
+    p_sk_remove = p_skill_sub.add_parser("remove", help="remove an installed pack")
+    p_sk_remove.add_argument("skill_id")
+    p_sk_remove.set_defaults(func=_cmd_skill)
 
     return parser
 

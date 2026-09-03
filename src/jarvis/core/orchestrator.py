@@ -186,6 +186,13 @@ class Orchestrator:
                 error=f"invalid input: {exc}",
             )
         if matched is None:
+            # M9b: installed, receipt-verified skill packs extend matching with
+            # new phrasings for EXISTING playbooks only — the kernel decides
+            # argv and tier exactly as before; packs add vocabulary, not power.
+            from jarvis.planner.skills import match_skill
+
+            matched = match_skill(text)
+        if matched is None:
             known = ", ".join(pb.id for pb in PLAYBOOKS)
             return TaskOutcome(
                 playbook_id="<unmatched>",

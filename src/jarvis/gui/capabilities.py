@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from jarvis.gui.atspi import atspi_available
 from jarvis.gui.detect import GuiEnvironment, ydotool_socket
 
 CAPABILITIES = (
@@ -22,12 +23,37 @@ CAPABILITIES = (
     "atspi",
 )
 
+# M9e: how an action reaches the machine. "api"/"wm" = OS-level interfaces
+# (accessibility, window-manager IPC, portals, capture APIs); "injection" =
+# synthetic input (xdotool/ydotool) — the last resort, consent-gated as always.
+_PATH_BY_BACKEND = {
+    "i3-msg": "wm",
+    "swaymsg": "wm",
+    "wmctrl": "wm",
+    "hyprctl": "wm",
+    "kdotool": "wm",
+    "setsid": "api",
+    "scrot": "api",
+    "grim": "api",
+    "spectacle": "api",
+    "gdbus-gnome-screenshot": "api",
+    "ollama-vision": "api",
+    "pyatspi": "api",
+    "xdotool": "injection",
+    "ydotool": "injection",
+}
+
 
 @dataclass(frozen=True)
 class CapabilityBinding:
     capability: str
     backend: str | None  # None = unavailable on this machine
     reason: str  # why, in plain words (for status output)
+    path: str = "api"  # "api" | "injection" | "wm" (M9e disclosure)
+
+    def __post_init__(self) -> None:
+        if self.backend is not None and self.path not in ("api", "injection", "wm"):
+            raise ValueError(f"unknown action path: {self.path}")
 
 
 def _ydotool_ready(env: GuiEnvironment) -> bool:
@@ -52,7 +78,7 @@ def available(env: GuiEnvironment) -> dict[str, CapabilityBinding]:
         return out
 
     # launch is universal on graphical sessions (detached argv spawn).
-    out["launch"] = CapabilityBinding("launch", "setsid", "detached process spawn")
+    out["launch"] = CapabilityBinding("launch", "setsid", "detached process spawn", path="api")
 
     # window management backend per session/desktop
     if env.session_type == "x11":
@@ -101,9 +127,36 @@ def available(env: GuiEnvironment) -> dict[str, CapabilityBinding]:
             f"{wm} window control"
             if wm
             else f"no window-control backend for {env.desktop} on {env.session_type}",
+            path=_PATH_BY_BACKEND.get(wm or "", "wm"),
         )
-    for cap in ("type_text", "key"):
-        out[cap] = CapabilityBinding(cap, input_backend, input_reason)
+    if atspi_available():
+        out["type_text"] = CapabilityBinding(
+            "type_text",
+            "atspi-editable",
+            "API-first: AT-SPI EditableText on the focused object (no synthetic keys)",
+            path="api",
+        )
+    else:
+        out["type_text"] = CapabilityBinding(
+            "type_text",
+            input_backend,
+            (
+                f"injection via {input_backend} (install python3-pyatspi for the API path)"
+                if input_backend
+                else input_reason
+            ),
+            path="injection",
+        )
+    out["key"] = CapabilityBinding(
+        "key",
+        input_backend,
+        (
+            input_reason + " (no honest API path exists for key synthesis)"
+            if input_backend
+            else input_reason
+        ),
+        path="injection",
+    )
     out["screenshot"] = CapabilityBinding(
         "screenshot", shot, f"{shot} capture" if shot else "no screenshot backend found"
     )

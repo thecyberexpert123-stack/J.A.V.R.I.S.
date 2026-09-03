@@ -29,6 +29,22 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.6.0] - 2026-09-03 — M9e + M9b: ADR-0013 complete (owner-approved)
+
+### Added — M9e: API-first GUI actions
+- **`type_text` gains an AT-SPI EditableText API path**: when `pyatspi` is importable, text entry sets content through the accessibility interface — no synthetic keystrokes. Same T2 consent, same TOCTOU focus guard, same no-text-in-journal redaction; **no silent fallback** (an API failure is an honest error; the injection path stays visible in `gui status`). Key combinations stay injection-only — stated plainly: there is no honest API path for key synthesis.
+- **Action-path disclosure**: every capability binding now carries a `path` (`api` / `wm` / `injection`) shown by `jarvis gui status` and `--json` — the UFO²-informed guarantee that the operator can see whether an action rides OS interfaces or synthetic input.
+
+### Added — M9b: verified skill packs
+- **`jarvis skill install/list/remove`**: a skill pack is **data that compiles through the kernel** — it may only re-expose an existing playbook under a new one-line match regex with fixed scalar params. The referenced playbook determines argv and tier; packs cannot add commands, raise tiers, or carry instructions any model reads at runtime (the anti-ClawHub design; ~12% of ClawHub's instruction-file catalog was documented malicious).
+- Install is consent-gated (T2 through the real `ApprovalPolicy`), shows the full pack first, and runs every eval case as a real planning dry-run — a pack that cannot build on this machine never installs. Installed bytes are pinned by a sha256 receipt; a pack whose bytes drift is skipped **fail-closed** by the matcher and flagged by `jarvis doctor` (skills live in the M9c integrity scope).
+- `match_intent` gains a verified fallback: installed, receipt-verified packs extend NL matching deterministically (id order, first fullmatch); `run_intent` journals the alias in `params.skill`. Charter precheck deliberately still speaks canonical phrasings only — standing orders don't change meaning silently.
+- Format note: ADR-0013 sketched YAML; packs are strict **JSON** (`*.skill.json`) — stdlib-only per ADR-0005.
+- Tests: +39 (M9e matrix paths, API flow incl. consent/TOCTOU/honest failure with a fake pyatspi; M9b validation matrix, eval gating, receipt drift fail-closed, end-to-end skill phrasing through `run_intent`, CLI, integrity scope). Suite: **488 passed + 2 honest skips** (490 collected).
+
+### Changed
+- Version 1.6.0; PKGBUILD/spec synced. **ADR-0013 is now fully implemented** (M9a 1.3.0 · M9c 1.4.0 · M9d 1.5.0 · M9e+M9b 1.6.0).
+
 ## [1.5.0] - 2026-09-03 — M9d: charters, circuit-broken standing orders (ADR-0013, owner-approved)
 
 ### Added

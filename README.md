@@ -114,6 +114,30 @@ $ jarvis charter list / pause / resume / revoke
 
 Breakers: failure **pauses** the charter; monthly run budget and per-run step caps; hard tier ceiling (T3 never charterable); systemd `TimeoutStartSec` wall-clock bound; semantic drift (a request that stops matching its allowlist) pauses instead of improvising; contract bytes are inside the `jarvis doctor` integrity scope. Without a systemd user session, scheduling degrades honestly to manual `charter run` invocations.
 
+## Skill packs (ADR-0013 M9b)
+
+A skill pack adds new phrasings for an **existing** playbook — never new commands, never model-read instructions:
+
+```json
+{
+  "schema": 1,
+  "id": "refresh-all",
+  "description": "colloquial phrasings for refreshing the package index",
+  "match": "^(?:refresh|sync)\s+(?:everything|all)$",
+  "playbook": "pkg.cache.refresh",
+  "params": {},
+  "evals": [{"request": "refresh everything"}],
+  "provenance": {"source": "owner", "sha256": "<hex>"}
+}
+```
+
+```console
+$ jarvis --yes skill install refresh-all.skill.json   # evals run as real dry-runs
+$ jarvis do --dry-run "refresh everything"            # plans through the kernel
+```
+
+Packs are receipt-pinned (sha256) and live inside the `jarvis doctor` integrity scope; drifted packs are skipped fail-closed. GUI actions disclose their route (`api` / `wm` / `injection`) in `jarvis gui status`; `type_text` prefers the AT-SPI EditableText API over synthetic keystrokes (ADR-0013 M9e).
+
 ## Status of this repository
 
 Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in

@@ -145,7 +145,7 @@ class GuiService:
 
     def status(self) -> dict[str, object]:
         caps: dict[str, object] = {
-            cap: {"backend": binding.backend, "reason": binding.reason}
+            cap: {"backend": binding.backend, "path": binding.path, "reason": binding.reason}
             for cap, binding in self._caps.items()
         }
         titles, atspi_reason = desktop_window_titles()
@@ -239,7 +239,10 @@ class GuiService:
             raise GuiPolicyError(
                 "no focused window — keystrokes would go nowhere; focus a window first"
             )
-        backend = str(self._require("type_text").backend)
+        binding = self._require("type_text")
+        if binding.path == "api":
+            return self._type_via_atspi(text, target)
+        backend = str(binding.backend)
         argv = (
             ["xdotool", "type", "--delay", "40", "--", text]
             if backend == "xdotool"
@@ -271,6 +274,43 @@ class GuiService:
             "type",
             "done",
             f"injected via {backend}; delivery to the application cannot be verified",
+            target=target,
+        )
+
+    def _type_via_atspi(self, text: str, target: str) -> GuiActionResult:
+        """M9e API-first text entry — same consent tier, same TOCTOU guard,
+        no synthetic keystrokes. No silent fallback: an API failure is an
+        honest error (the injection path stays visible in `gui status`)."""
+        from jarvis.gui.atspi import set_focused_text
+
+        pseudo_argv = [
+            "at-spi",
+            "EditableText.setTextContents",
+            f"<redacted: {len(text)} chars>",
+        ]
+        self._consent(f"type {len(text)} chars into focused window (via AT-SPI)", pseudo_argv)
+        recheck = self.focused_title()
+        if recheck != target:
+            raise GuiPolicyError(
+                f"focus changed during approval ({target!r} -> {recheck!r}); "
+                "aborting API action (TOCTOU guard)"
+            )
+        ok, detail = set_focused_text(text)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        self._journal_action(
+            "gui.type",
+            {"length": len(text), "sha256_16": digest, "backend": "atspi-editable"},
+            pseudo_argv,
+            0 if ok else 1,
+            target=target,
+            store_text=False,
+        )
+        if not ok:
+            raise GuiBackendError(f"AT-SPI text entry failed: {detail}")
+        return GuiActionResult(
+            "type",
+            "done",
+            f"{detail}; the application received an edit, not keystrokes",
             target=target,
         )
 

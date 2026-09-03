@@ -77,7 +77,7 @@ def default_scope() -> IntegrityScope:
             root / "planner" / "playbooks.py",
             state_dir() / "cautious",
         ),
-        dirs=(root / "safety", state_dir() / "charters"),
+        dirs=(root / "safety", state_dir() / "charters", state_dir() / "skills"),
     )
 
 
