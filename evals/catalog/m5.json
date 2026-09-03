@@ -30,13 +30,13 @@
     },
     {
       "id": "03-input-xdotool",
-      "description": "xdotool selected for text input on X11",
+      "description": "xdotool selected for synthetic input on X11 (key always uses it; type_text prefers AT-SPI when importable)",
       "run": [
         "gui",
         "status"
       ],
       "expect": {
-        "json_path": "capabilities.type_text.backend",
+        "json_path": "capabilities.key.backend",
         "equals": "xdotool"
       }
     },
@@ -158,7 +158,7 @@
       "expect": {
         "exit": 0,
         "file_starts": "/tmp/jarvis-shot.png",
-        "magic": "PNG"
+        "magic": "\u0089PNG"
       }
     },
     {

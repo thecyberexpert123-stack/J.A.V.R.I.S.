@@ -23,7 +23,7 @@ from jarvis.gui import backends
 from jarvis.gui.atspi import desktop_window_titles
 from jarvis.gui.backends import GuiBackendError, Window
 from jarvis.gui.capabilities import CapabilityBinding, available
-from jarvis.gui.detect import probe
+from jarvis.gui.detect import probe, ydotool_socket
 from jarvis.gui.vision import VisionUnavailable, describe_image
 from jarvis.journal.sqlite import Journal
 from jarvis.safety.approval import ApprovalPolicy
@@ -231,7 +231,27 @@ class GuiService:
         )
         return GuiActionResult("focus", "done", detail, target=window.title)
 
+    def _text_injection_argv(self, text: str) -> tuple[list[str], str] | None:
+        """Synthetic-input argv for text, per what this machine actually has."""
+        if self.gui_env.has_tool("xdotool"):
+            return ["xdotool", "type", "--delay", "40", "--", text], "xdotool"
+        if self.gui_env.has_tool("ydotool") and ydotool_socket().exists():
+            return ["ydotool", "type", "--", text], "ydotool"
+        return None
+
+    def _recheck_focus(self, target: str) -> None:
+        recheck = self.focused_title()
+        if recheck != target:
+            raise GuiPolicyError(
+                f"focus changed during approval ({target!r} -> {recheck!r}); "
+                "aborting the action (TOCTOU guard)"
+            )
+
     def type_text(self, text: str) -> GuiActionResult:
+        """M9e API-first text entry (ADR-0013): AT-SPI EditableText when the
+        machine offers it, synthetic input as the disclosed fallback under the
+        same consent — never a silent mechanism switch (the journal and the
+        result detail name every attempt)."""
         self._require("type_text")
         text = validate_text(text)
         target = self.focused_title()
@@ -240,29 +260,78 @@ class GuiService:
                 "no focused window — keystrokes would go nowhere; focus a window first"
             )
         binding = self._require("type_text")
-        if binding.path == "api":
-            return self._type_via_atspi(text, target)
-        backend = str(binding.backend)
-        argv = (
-            ["xdotool", "type", "--delay", "40", "--", text]
-            if backend == "xdotool"
-            else ["ydotool", "type", "--", text]
-        )
-        self._consent(f"type {len(text)} chars into focused window", argv)
-        recheck = self.focused_title()
-        if recheck != target:
-            raise GuiPolicyError(
-                f"focus changed during approval ({target!r} -> {recheck!r}); "
-                "aborting injection (TOCTOU guard)"
-            )
-        result = self._runner.run(argv)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        injection = self._text_injection_argv(text)
+
+        api_note = ""
+        if binding.path == "api":
+            from jarvis.gui.atspi import set_focused_text
+
+            pseudo_argv = [
+                "at-spi",
+                "EditableText.setTextContents",
+                f"<redacted: {len(text)} chars>",
+            ]
+            consent_argv = injection[0] if injection else pseudo_argv
+            self._consent(
+                f"type {len(text)} chars into focused window"
+                " (AT-SPI preferred; synthetic input as fallback)",
+                consent_argv,
+            )
+            self._recheck_focus(target)
+            ok, detail = set_focused_text(text)
+            if ok:
+                self._journal_action(
+                    "gui.type",
+                    {"length": len(text), "sha256_16": digest, "backend": "atspi-editable"},
+                    pseudo_argv,
+                    0,
+                    target=target,
+                    store_text=False,
+                )
+                return GuiActionResult(
+                    "type",
+                    "done",
+                    f"{detail}; the application received an edit, not keystrokes",
+                    target=target,
+                )
+            api_note = f"AT-SPI unavailable ({detail})"
+
+        if injection is None:
+            self._journal_action(
+                "gui.type",
+                {
+                    "length": len(text),
+                    "sha256_16": digest,
+                    "backend": "none",
+                    **({"api_attempt": api_note} if api_note else {}),
+                },
+                [f"<redacted: {len(text)} chars sha256_16={digest}>"],
+                1,
+                target=target,
+                store_text=False,
+            )
+            raise GuiBackendError(
+                f"{api_note + '; ' if api_note else ''}no synthetic-input backend available"
+            )
+        argv, backend = injection
+        if binding.path != "api":  # api path already consented above
+            self._consent(f"type {len(text)} chars into focused window", argv)
+            self._recheck_focus(target)
+        result = self._runner.run(argv)
         redacted_argv = [
             f"<redacted: {len(text)} chars sha256_16={digest}>" if a == text else a for a in argv
         ]
+        params: dict[str, object] = {
+            "length": len(text),
+            "sha256_16": digest,
+            "backend": backend,
+        }
+        if api_note:
+            params["api_attempt"] = api_note
         self._journal_action(
             "gui.type",
-            {"length": len(text), "sha256_16": digest, "backend": backend},
+            params,
             redacted_argv,
             result.exit_code,
             target=target,
@@ -270,49 +339,12 @@ class GuiService:
         )
         if not result.ok:
             raise GuiBackendError(f"injection failed (exit {result.exit_code})")
-        return GuiActionResult(
-            "type",
-            "done",
-            f"injected via {backend}; delivery to the application cannot be verified",
-            target=target,
+        detail = (
+            f"injected via {backend}; delivery to the application cannot be verified"
+            if not api_note
+            else f"{api_note}; fell back to injection via {backend}; delivery cannot be verified"
         )
-
-    def _type_via_atspi(self, text: str, target: str) -> GuiActionResult:
-        """M9e API-first text entry — same consent tier, same TOCTOU guard,
-        no synthetic keystrokes. No silent fallback: an API failure is an
-        honest error (the injection path stays visible in `gui status`)."""
-        from jarvis.gui.atspi import set_focused_text
-
-        pseudo_argv = [
-            "at-spi",
-            "EditableText.setTextContents",
-            f"<redacted: {len(text)} chars>",
-        ]
-        self._consent(f"type {len(text)} chars into focused window (via AT-SPI)", pseudo_argv)
-        recheck = self.focused_title()
-        if recheck != target:
-            raise GuiPolicyError(
-                f"focus changed during approval ({target!r} -> {recheck!r}); "
-                "aborting API action (TOCTOU guard)"
-            )
-        ok, detail = set_focused_text(text)
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-        self._journal_action(
-            "gui.type",
-            {"length": len(text), "sha256_16": digest, "backend": "atspi-editable"},
-            pseudo_argv,
-            0 if ok else 1,
-            target=target,
-            store_text=False,
-        )
-        if not ok:
-            raise GuiBackendError(f"AT-SPI text entry failed: {detail}")
-        return GuiActionResult(
-            "type",
-            "done",
-            f"{detail}; the application received an edit, not keystrokes",
-            target=target,
-        )
+        return GuiActionResult("type", "done", detail, target=target)
 
     def key(self, combo: str) -> GuiActionResult:
         self._require("key")

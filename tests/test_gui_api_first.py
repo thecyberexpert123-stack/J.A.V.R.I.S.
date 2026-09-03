@@ -185,9 +185,11 @@ def test_api_path_keeps_the_toctou_guard(
     assert runner.calls == []  # and nothing was executed
 
 
-def test_api_failure_is_honest_no_silent_fallback(
+def test_api_failure_falls_back_disclosed(
     journal: Journal, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
+    """ADR-0013 ordering: API preferred, synthetic input as the *disclosed*
+    fallback under the same consent — the journal names both attempts."""
     monkeypatch.setenv("JARVIS_STATE_DIR", str(tmp_path / "st"))
     monkeypatch.setattr(caps_mod, "atspi_available", lambda: True)
     monkeypatch.setattr(
@@ -195,7 +197,10 @@ def test_api_failure_is_honest_no_silent_fallback(
         lambda text: (False, "no focused editable-text object found"),
     )
     runner = FakeRunner(
-        script=[(("xdotool", "getactivewindow", "getwindowname"), _result("gedit — x"))]
+        script=[
+            (("xdotool", "getactivewindow", "getwindowname"), _result("xterm — t")),
+            (("xdotool", "type", "--delay", "40", "--", "fallback-text"), _result()),
+        ]
     )
     service = GuiService(
         runner,
@@ -204,9 +209,37 @@ def test_api_failure_is_honest_no_silent_fallback(
         env={"DISPLAY": ":0"},
         which_fn=_which(("xdotool", "wmctrl")),
     )
-    with pytest.raises(GuiBackendError, match="no focused editable"):
+    outcome = service.type_text("fallback-text")
+    assert outcome.status == "done"
+    assert "fell back to injection via xdotool" in outcome.detail
+    assert "AT-SPI unavailable" in outcome.detail
+    assert any(call[0][:2] == ("xdotool", "type") for call in runner.calls)
+    task = journal.recent_tasks(limit=1)[0]
+    row = journal.get_task(str(task["id"]))
+    assert row is not None
+    params = str(row["params"])
+    assert "api_attempt" in params and "fallback-text" not in params
+
+
+def test_api_failure_without_injection_tool_is_honest(
+    journal: Journal, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    monkeypatch.setenv("JARVIS_STATE_DIR", str(tmp_path / "st"))
+    monkeypatch.setattr(caps_mod, "atspi_available", lambda: True)
+    monkeypatch.setattr(
+        "jarvis.gui.atspi.set_focused_text",
+        lambda text: (False, "no focused editable-text object found"),
+    )
+    service = GuiService(
+        FakeRunner(),  # type: ignore[arg-type]
+        ApprovalPolicy(yes=True),
+        journal,
+        env={"DISPLAY": ":0"},
+        which_fn=_which(("wmctrl",)),  # no xdotool, no ydotool
+    )
+    monkeypatch.setattr(service, "focused_title", lambda: "xterm — w")  # focus without injection
+    with pytest.raises(GuiBackendError, match="no synthetic-input backend"):
         service.type_text("hi")
-    assert not any(call[0][:2] == ("xdotool", "type") for call in runner.calls)
 
 
 # -- atspi action layer (fake pyatspi module) ----------------------------------

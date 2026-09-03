@@ -32,7 +32,7 @@ below each entry were corrected in place.
 ## [1.6.0] - 2026-09-03 — M9e + M9b: ADR-0013 complete (owner-approved)
 
 ### Added — M9e: API-first GUI actions
-- **`type_text` gains an AT-SPI EditableText API path**: when `pyatspi` is importable, text entry sets content through the accessibility interface — no synthetic keystrokes. Same T2 consent, same TOCTOU focus guard, same no-text-in-journal redaction; **no silent fallback** (an API failure is an honest error; the injection path stays visible in `gui status`). Key combinations stay injection-only — stated plainly: there is no honest API path for key synthesis.
+- **`type_text` gains an AT-SPI EditableText API path**: when `pyatspi` is importable, text entry prefers the accessibility interface — no synthetic keystrokes. Same T2 consent, same TOCTOU focus guard, same no-text-in-journal redaction. **Fallback is disclosed, not silent** (ADR-0013 ordering: API preferred, synthetic input as last resort): if the API path fails (e.g. the focused app exposes no editable), the injection backend runs under the same consent and the journal/result name both attempts (`api_attempt`); with no fallback at all it is an honest error. Key combinations stay injection-only — stated plainly: there is no honest API path for key synthesis.
 - **Action-path disclosure**: every capability binding now carries a `path` (`api` / `wm` / `injection`) shown by `jarvis gui status` and `--json` — the UFO²-informed guarantee that the operator can see whether an action rides OS interfaces or synthetic input.
 
 ### Added — M9b: verified skill packs
@@ -40,7 +40,8 @@ below each entry were corrected in place.
 - Install is consent-gated (T2 through the real `ApprovalPolicy`), shows the full pack first, and runs every eval case as a real planning dry-run — a pack that cannot build on this machine never installs. Installed bytes are pinned by a sha256 receipt; a pack whose bytes drift is skipped **fail-closed** by the matcher and flagged by `jarvis doctor` (skills live in the M9c integrity scope).
 - `match_intent` gains a verified fallback: installed, receipt-verified packs extend NL matching deterministically (id order, first fullmatch); `run_intent` journals the alias in `params.skill`. Charter precheck deliberately still speaks canonical phrasings only — standing orders don't change meaning silently.
 - Format note: ADR-0013 sketched YAML; packs are strict **JSON** (`*.skill.json`) — stdlib-only per ADR-0005.
-- Tests: +39 (M9e matrix paths, API flow incl. consent/TOCTOU/honest failure with a fake pyatspi; M9b validation matrix, eval gating, receipt drift fail-closed, end-to-end skill phrasing through `run_intent`, CLI, integrity scope). Suite: **488 passed + 2 honest skips** (490 collected).
+- GUI eval catalog: task `03-input-xdotool` now asserts the stable fact (`capabilities.key.backend == xdotool`) instead of pinning `type_text`'s backend — which legitimately becomes `atspi-editable` on machines with pyatspi.
+- Tests: +40 (M9e matrix paths, API flow incl. consent/TOCTOU/disclosed fallback/no-tool honesty with a fake pyatspi; M9b validation matrix, eval gating, receipt drift fail-closed, end-to-end skill phrasing through `run_intent`, CLI, integrity scope). Suite: **489 passed + 2 honest skips** (491 collected).
 
 ### Changed
 - Version 1.6.0; PKGBUILD/spec synced. **ADR-0013 is now fully implemented** (M9a 1.3.0 · M9c 1.4.0 · M9d 1.5.0 · M9e+M9b 1.6.0).
