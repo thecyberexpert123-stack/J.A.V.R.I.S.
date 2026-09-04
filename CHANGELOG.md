@@ -29,6 +29,18 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [Unreleased]
+
+### Added
+- **ADR-0017 — Dragon Fly AI (DFA) alignment** (`docs/adr/0017-dfa-alignment.md`): the owner's
+  self-derived agent architecture, assessed layer-by-layer against the source at `1b5d8eb`.
+  Verdict: JARVIS already implements DFA's four layers (reasoning → `providers/`, capabilities →
+  playbooks, control → approval/tier pipeline, action → argv-only execution), so DFA is adopted
+  as the descriptive frame and contributor vocabulary — no code change. One delta adopted as an
+  owner-gated v1.12.0 proposal (per-playbook capability manifests); one delta deliberately
+  diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
+  execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
+
 ## [1.11.0] - 2026-09-04 — playbook catalog breadth: 12 → 56 commands, same kernel discipline (owner-directed)
 
 Owner directive: "add almost every possible, Linux Command in the Playbook, also maintain my
