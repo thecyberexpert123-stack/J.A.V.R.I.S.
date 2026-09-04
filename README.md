@@ -84,6 +84,14 @@ journal record for owner review, and `--no-ai` (or `JARVIS_NO_AI=1`) disables
 every model path in one switch — the agent remains fully usable without any
 AI.
 
+**Learned intent recall (ADR-0015):** a tiny purpose-built neural network
+(~13K parameters, shipped weights, stdlib inference) ranks the playbook
+vocabulary for loosely-phrased requests when the engine and the LLM planner
+have both declined. It is proposals-only by construction: suggestions must
+re-pass the real matchers and are printed for you to type (`jarvis do …`),
+never executed; `--no-ai` switches it off. Retrain any time:
+`python training/train_intent.py` (gated, deterministic).
+
 ## MCP surface (ADR-0013 M9a)
 
 `jarvis mcp serve` speaks the Model Context Protocol — newline-delimited JSON-RPC 2.0 on stdio, stdlib-only (no SDK). An MCP client is just another front-end to the same kernel:

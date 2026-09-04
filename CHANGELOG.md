@@ -29,6 +29,18 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.10.0] - 2026-09-04 — M11: learned intent recall — a purpose-built proposals-only neural classifier (ADR-0015, owner-directed)
+
+### Added
+- **A purpose-built neural network for JARVIS** (`src/jarvis/intent/`): a tiny MLP — hashed word/bi-gram + character-trigram features (fastText-style, 256-dim signed hashing trick) → 48 ReLU units → softmax over the 12 playbook families **plus an explicit `unknown` abstention class** (~13K parameters, 107 KB weights shipped as package data). Pure-stdlib inference (~1 ms), zero runtime dependencies (ADR-0005 intact).
+- **Deterministic gated trainer** (`training/train_intent.py`, dev-only): seeded, reproducible, pure-stdlib backprop; gates (holdout top-1 ≥ 0.88, top-3 ≥ 0.97, OOD abstention ≥ 0.80) run against the *rounded shipped weights* and refuse to write model.json on failure. Shipped model: holdout **top-1 0.992 / top-3 1.000 / OOD abstention 1.000**; hand-written eval sets (independent of the training generator): 22 labeled, top-1 ≥ 0.9 gate, top-3 = 1.0, OOD abstain ≥ 0.85 — all green.
+- **Proposals-only wiring** (the authority contract): the classifier is consulted only after the deterministic engine missed AND the LLM planner is unavailable or honestly unexpressible; a suggestion must pass a deterministic slot extractor AND re-pass the REAL playbook matcher, and is rendered as text — "it looks like: `jarvis do install htop` — type that yourself to run it (suggestions never self-execute)". `file.append` is extractor-free by design (the model never reconstructs paths). `--no-ai`/`JARVIS_NO_AI=1` switches it off like every other model path (ADR-0014 D7); disclosure falls back to the lexical ranking.
+- **Research + ADR**: `docs/RESEARCH-tiny-intent-models-2026.md` (fastText/hashing lineage, abstention structure, training-data honesty) and `docs/adr/0015-learned-intent-recall.md`.
+- Tests: +14 (`tests/test_intent_model.py`): artifact shape/size, hand-labeled accuracy gates, hand-OOD abstention, the structural every-suggestion-is-engine-legal invariant, determinism, latency, missing-model fallback, and end-to-end CLI wiring incl. the `--no-ai` off-switch. Suite: **575 passed + 2 honest skips** (577 collected).
+
+### Changed
+- Unknown-request hints (`jarvis ask` unknown path) may now include a learned, engine-legal suggested command — exit codes and JSON `error` contracts unchanged. The MCP surface is untouched (frozen `javris-frontend/1`).
+
 ## [1.9.0] - 2026-09-04 — M10: AI failure semantics — breaker, taxonomy, grounded answers, no-AI contract (ADR-0014, owner-directed)
 
 ### Added

@@ -25,6 +25,7 @@ from jarvis.gui.backends import GuiBackendError
 from jarvis.gui.service import GuiPolicyError, GuiService, GuiUnavailable
 from jarvis.gui.wizard import report as wizard_report
 from jarvis.gui.wizard import run_checks as wizard_checks
+from jarvis.intent.classifier import rank_intents, suggest_intent
 from jarvis.journal.sqlite import Journal, default_db_path, state_dir
 from jarvis.knowledge.ai_answer import answer_with_ai
 from jarvis.knowledge.answers import answer as kb_answer
@@ -55,17 +56,39 @@ def _breaker() -> ProviderBreaker:
     return ProviderBreaker(default_breaker_path())
 
 
-def _unknown_outcome(text: str, error: str, hint: str, journal: Journal | None) -> TaskOutcome:
+def _unknown_outcome(
+    text: str,
+    error: str,
+    hint: str,
+    journal: Journal | None,
+    *,
+    suggestion: str | None = None,
+) -> TaskOutcome:
     """A processed unknown (ADR-0014 D6): disclose, suggest, record, teach.
 
     The journal record is growth-loop input for the owner — proactivity
     proposes, consent executes; JARVIS never turns an unknown into an action.
+    Disclosure ranking prefers the learned classifier (ADR-0015, proposals
+    only) and falls back to the lexical ranking when no model is available —
+    both are equivalent disclosures, neither is authority.
     """
-    alternatives = nearest_intents(text)
+    ranked = rank_intents(text)
+    if ranked:
+        descriptions = {pb.id: pb.description for pb in PLAYBOOKS}
+        alternatives = [
+            f"{label} — {descriptions.get(label, '')}".rstrip(" -") for label, _prob in ranked
+        ]
+    else:
+        alternatives = nearest_intents(text)
     if journal is not None:
         with contextlib.suppress(Exception):
             journal.record_unknown_request(text, error[:200], alternatives)
     parts = [hint]
+    if suggestion is not None:
+        parts.append(
+            f"it looks like: 'jarvis do {suggestion}' — type that yourself to run it "
+            "(suggestions never self-execute)."
+        )
     if alternatives:
         parts.append("did you mean: " + "; ".join(alternatives) + "?")
     parts.append(
@@ -297,6 +320,9 @@ def _ask_flow(
 
     routing = plan_routing(enabled=ai_on)
     if routing.mode == "none" or routing.provider is None:
+        # ADR-0015: the learned classifier gets one proposals-only look —
+        # its suggestion is TEXT the user types, never an executed plan.
+        nn_suggestion = suggest_intent(text) if ai_on else None
         setup = (
             "Install Ollama (local-first, ADR-0003) or configure the remote endpoint "
             "to enable AI planning."
@@ -310,6 +336,7 @@ def _ask_flow(
             f"{routing.note}. {setup} The deterministic engine, cited KB answers and the "
             "journal still work without AI.",
             journal,
+            suggestion=nn_suggestion,
         )
     provider = routing.provider
     breaker = _breaker() if ai_on else None
@@ -326,6 +353,7 @@ def _ask_flow(
                 f"unknown-request: {exc}",
                 exc.hint or "rephrase the request, or use a supported playbook (jarvis playbooks).",
                 journal,
+                suggestion=suggest_intent(text),
             )
         if breaker is not None:
             breaker.record_failure(provider.name, "malformed", str(exc))
