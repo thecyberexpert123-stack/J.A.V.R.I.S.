@@ -343,7 +343,14 @@ def _ask_flow(
     if not quiet:
         print(f"[planner] asking {routing.mode}:{provider.name}/{provider.model} for a plan...")
     try:
-        proposed = build_plan(text, provider, breaker=breaker)
+        memory_block = ""
+        try:
+            from jarvis.memory.store import MemoryStore
+
+            memory_block = MemoryStore().prompt_block()
+        except OSError:
+            memory_block = ""  # unreadable store → plan without memory, as before
+        proposed = build_plan(text, provider, breaker=breaker, memory_block=memory_block)
     except PlanRefused as exc:
         if exc.kind == "unexpressible":
             if breaker is not None:
@@ -1418,6 +1425,48 @@ def _cmd_voice(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_memory(args: argparse.Namespace) -> int:
+    """Owner-taught memory (ADR-0020): list / remember / forget / show."""
+    from jarvis.memory.store import MemoryStore
+    from jarvis.safety.tiers import SafetyRefusal
+
+    store = MemoryStore()
+    try:
+        action = args.memory_command
+        if action == "remember":
+            entry = store.remember(" ".join(args.text), source="cli")
+            print(f"remembered {entry.entry_id}: {entry.text}")
+            return 0
+        if action == "list":
+            entries = store.list_entries()
+            print(f"{len(entries)} memor{'y' if len(entries) == 1 else 'ies'}")
+            for entry in entries:
+                meta = f"[{entry.origin}/{entry.source}]"
+                print(f"  {entry.entry_id}  {entry.created}  {meta}  {entry.text}")
+            return 0
+        if action == "show":
+            entry = store.get(args.entry_id)
+            print(f"id      : {entry.entry_id}")
+            print(f"created : {entry.created}")
+            print(f"origin  : {entry.origin} ({entry.source})")
+            print(f"text    : {entry.text}")
+            return 0
+        # forget
+        if args.all:
+            count = store.forget_all()
+            print(f"forgot {count} memor{'y' if count == 1 else 'ies'}")
+            return 0
+        if not args.entry_id:
+            print("error: give a memory id or --all", file=sys.stderr)
+            return 2
+        store.forget(args.entry_id)
+        print(f"forgot {args.entry_id}")
+        return 0
+    except SafetyRefusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1727,6 +1776,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--seconds", type=int, default=5, help="record duration, 1..15 (default 5)"
     )
     p_voice_ask.set_defaults(func=_cmd_voice, voice_command="ask")
+
+    p_memory = sub.add_parser(
+        "memory",
+        help="owner-taught memory (ADR-0020): list / remember / forget / show",
+        description=(
+            "Small, plain-file, owner-taught memories. Writes are hygiene-checked "
+            "and prompt-injection-scanned; the LLM planner reads them as bounded, "
+            "delimited, non-instructional context. Purge anytime: forget --all."
+        ),
+    )
+    p_memory_sub = p_memory.add_subparsers(dest="memory_command", required=True)
+    p_mem_list = p_memory_sub.add_parser("list", help="list memories, newest first")
+    p_mem_list.set_defaults(func=_cmd_memory, memory_command="list")
+    p_mem_remember = p_memory_sub.add_parser(
+        "remember", help='store a fact, e.g. remember "deploy user is admin"'
+    )
+    p_mem_remember.add_argument("text", nargs="+")
+    p_mem_remember.set_defaults(func=_cmd_memory, memory_command="remember")
+    p_mem_forget = p_memory_sub.add_parser("forget", help="forget one id, or --all")
+    p_mem_forget.add_argument("entry_id", nargs="?")
+    p_mem_forget.add_argument("--all", action="store_true")
+    p_mem_forget.set_defaults(func=_cmd_memory, memory_command="forget")
+    p_mem_show = p_memory_sub.add_parser("show", help="show one memory with provenance")
+    p_mem_show.add_argument("entry_id")
+    p_mem_show.set_defaults(func=_cmd_memory, memory_command="show")
 
     p_doctor = sub.add_parser(
         "doctor",

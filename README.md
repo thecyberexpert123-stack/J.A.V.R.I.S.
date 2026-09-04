@@ -6,14 +6,14 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.13.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
-residency (ADR-0018) + voice front-end (ADR-0019)**: deterministic engine + LLM planner with
-failure semantics + a proposals-only neural intent classifier + safety kernel + cited knowledge +
-MCP surface + verified skill packs + charters + integrity doctor + GUI control + **56
-deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice into the same
-kernel, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review
-candidates `v1.0.0-rc1` … `v1.13.0-rc1` await the owner's release decisions. Reports:
-`evals/results/`. See `INSTALL.md`.**
+**Status: `v1.14.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+residency (ADR-0018) + voice front-end (ADR-0019) + owner-taught memory (ADR-0020)**:
+deterministic engine + LLM planner with failure semantics + a proposals-only neural intent
+classifier + safety kernel + cited knowledge + MCP surface + verified skill packs + charters +
+integrity doctor + GUI control + **56 deterministic playbooks** + an opt-in loopback doorway +
+push-to-talk voice + plain-file persistent memory, packaged (wheel/deb/rpm/AUR) and
+install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` … `v1.14.0-rc1`
+await the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -135,6 +135,22 @@ match → plan → approve → execute → verify path; **T2 is not voice-consen
 refusal tells you to type it with `--yes`. Requires standard binaries (`whisper-cli`-class STT
 with `$JARVIS_STT_MODEL`, `piper` with `$JARVIS_TTS_MODEL`, `arecord`, a player); `doctor`
 reports exactly what is missing. Hands-free wake word is parked by design (ADR-0019 D3).
+
+## Memory (ADR-0020)
+
+Plain files you teach, the planner may read, anyone can purge:
+
+```bash
+jarvis memory remember "deploy user is admin on the ops box"
+jarvis memory list                  # newest first, with provenance
+jarvis memory show <id> / forget <id> / forget --all
+```
+
+Writes are hygiene-checked and **prompt-injection-scanned** (instruction-like text is refused,
+never stored); the LLM planner sees the newest ≤10 entries as a delimited *background context*
+block in its system prompt — never as instructions, never a bypass: every proposed step still
+re-validates through the real playbooks. No database, no embeddings; one file per memory under
+the state dir. Agent-initiated capture is parked (ADR-0020 D2).
 
 ## Hybrid residency (ADR-0018)
 

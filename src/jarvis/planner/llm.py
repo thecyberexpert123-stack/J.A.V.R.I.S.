@@ -81,12 +81,23 @@ class PlanRefused(RuntimeError):
 
 
 def build_plan(
-    request: str, provider: Provider, *, breaker: ProviderBreaker | None = None
+    request: str,
+    provider: Provider,
+    *,
+    breaker: ProviderBreaker | None = None,
+    memory_block: str = "",
 ) -> ProposedPlan:
-    """Ask *provider* for a plan and strictly validate it against the catalog."""
+    """Ask *provider* for a plan and strictly validate it against the catalog.
+
+    ``memory_block`` (ADR-0020) is owner-taught background context, already
+    hygiene- and injection-checked at write time; it rides in the SYSTEM
+    prompt, delimited as non-instructions, and never reaches validation —
+    every proposed step still re-matches through the real playbooks.
+    """
+    system = _SYSTEM_PROMPT if not memory_block else f"{_SYSTEM_PROMPT}\n\n{memory_block}"
     content = guarded_complete(
         provider,
-        _SYSTEM_PROMPT,
+        system,
         request[:MAX_REQUEST_CHARS],
         breaker,
         schema=PLAN_JSON_SCHEMA,
