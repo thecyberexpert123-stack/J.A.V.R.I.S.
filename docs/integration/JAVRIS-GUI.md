@@ -126,3 +126,26 @@ orthogonal to this contract.
 `jarvis mcp serve`, speak §2, render §3–§5. The GUI's QProcess client (§1) is
 implementable today against this descriptor; the contract tests on the kernel
 side and the GUI's own `tools/check.sh` are the two gates.
+
+## 9. Resident mode (optional; ADR-0018, kernel 1.12.0+)
+
+The per-session spawn (`jarvis mcp serve` on stdio) remains the default and fully supported
+contract. For front-ends that want the agent reachable any time after login **without spawning
+it themselves**, the kernel offers an opt-in resident doorway:
+
+- The frontend owner enables it once: `jarvis serve install` (systemd `--user` unit,
+  `jarvis-serve.service`), optionally `--with-gui` to autostart the GUI app itself (XDG
+  autostart, written only when a `jarvis-gui` command exists). `jarvis serve uninstall`
+  returns the machine to pure on-demand; `jarvis serve status` reports each piece.
+- Transport: `http://127.0.0.1:<port>` (default 8777; loopback bind enforced — a non-loopback
+  bind is refused). `GET /v1/health` → `{"ok": true}`. `POST /v1/tools/<tool>` with
+  `Authorization: Bearer <token>` and `Content-Type: application/json`; the token lives at
+  `<state>/serve/token` (0600, never logged). `<tool>` is one of the six MCP tool names with
+  the identical argument schema and response envelope (`{"result": ..., "isError": ...}`).
+- Consent semantics are **identical** to the stdio contract: `jarvis_do` still requires the
+  per-call `allow: true` for T2; T3 is refused; no persistent yes; `jarvis_preview` remains the
+  pre-consent step. The STATE_MAPPING of §4 applies unchanged (STANDBY ≙ health ok, no request
+  in flight).
+- Security posture (§6) unchanged and test-asserted: loopback bind, constant-time token
+  compare, Host-header check, method/path allowlist, 64 KiB cap, no CORS answers, no
+  passthrough tool. The doorway holds no authority the stdio surface does not have.

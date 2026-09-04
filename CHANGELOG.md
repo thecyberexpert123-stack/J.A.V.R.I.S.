@@ -41,6 +41,41 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.12.0] - 2026-09-04 — hybrid residency: opt-in resident doorway, agent stays on-demand (owner-directed, ADR-0018)
+
+Owner directive: "Combine both, and make a Hybrid, option" — the systemd user-unit doorway and
+the GUI-autostart option combined into one opt-in mode. The charter holds: the agent itself
+never autostarts; what may exist after login is a **doorway, never an actor**.
+
+### Added
+- **`jarvis serve`** (`src/jarvis/cli/serve.py`): a loopback-only, token-authenticated HTTP
+  doorway that reuses the MCP tool handlers **verbatim** — consent parity is structural, not
+  reimplemented (`jarvis_do` still needs per-call `allow: true` for T2; refusals carry the same
+  preview-then-allow hint; T3 refused unconditionally; no persistent yes anywhere; no
+  exec/passthrough tool). Serve adds availability, never authority.
+- **Hardening, each asserted by a test (ADR-0018 D2):** non-loopback binds refused outright;
+  bearer token with constant-time compare (file `0600`, generated on first run or at install,
+  never logged); `Host` header must be loopback (DNS-rebinding defense); method/path
+  allowlists; 64 KiB body cap; JSON-only bodies; unknown tools 404; no CORS/preflight answers
+  (browsers cannot drive it); one stderr audit line per request without token or body.
+- **`jarvis serve install [--with-gui]`**: writes a systemd **user** unit
+  (`~/.config/systemd/user/jarvis-serve.service`, `WantedBy=default.target`, `Restart=on-failure`)
+  and enables it via `systemctl --user` when available (otherwise files are written and the skip
+  is disclosed with the manual command — never silently claimed). `--with-gui` additionally
+  writes an XDG autostart entry for the GUI frontend **only if** a `jarvis-gui` command exists
+  (probed first, refusal otherwise; the GUI repo remains untouched — contract-side only).
+  Validation precedes any write. **`uninstall`** reverses everything; **`status`** reports each
+  piece honestly.
+- **Packaging never enables residency (D4):** only the owner's typed `install` does. Default
+  shape unchanged: nothing runs unless you run it.
+- Docs: ADR-0018; README hybrid-residency section; integration-doc §9 (resident mode).
+
+### Tests
+- +21 (`tests/test_serve.py`): real-socket transport hardening, kernel parity through the
+  doorway (unmatched → refused; T2 without allow → refused; protected paths refused at build),
+  unit/desktop generation, install/uninstall/status round-trips with a fake HOME, token
+  hygiene. Suite: **670 passed + 2 honest skips** (672 collected). ruff + mypy clean.
+
 ## [1.11.0] - 2026-09-04 — playbook catalog breadth: 12 → 56 commands, same kernel discipline (owner-directed)
 
 Owner directive: "add almost every possible, Linux Command in the Playbook, also maintain my

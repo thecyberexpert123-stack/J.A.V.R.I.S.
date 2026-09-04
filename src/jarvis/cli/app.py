@@ -1341,6 +1341,36 @@ def _cmd_mcp_serve(args: argparse.Namespace) -> int:
     return MCPServer(stdin, stdout).serve()
 
 
+def _cmd_serve_run(args: argparse.Namespace) -> int:
+    """Run the resident doorway in the foreground (ADR-0018)."""
+    from jarvis.cli.serve import ensure_token, run_server
+
+    return run_server(args.bind, args.port, ensure_token())
+
+
+def _cmd_serve_install(args: argparse.Namespace) -> int:
+    """Install the opt-in residency (systemd --user unit, optional GUI autostart)."""
+    from jarvis.cli.serve import install
+
+    return install(
+        args.port,
+        with_gui=args.with_gui,
+        home=Path.home(),
+    )
+
+
+def _cmd_serve_uninstall(args: argparse.Namespace) -> int:
+    from jarvis.cli.serve import uninstall
+
+    return uninstall(Path.home())
+
+
+def _cmd_serve_status(args: argparse.Namespace) -> int:
+    from jarvis.cli.serve import status
+
+    return status(Path.home())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1586,6 +1616,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the machine-readable front-end contract (transport, tools, consent)",
     )
     p_mcp_describe.set_defaults(func=_cmd_mcp_describe)
+
+    p_serve = sub.add_parser(
+        "serve",
+        help="hybrid residency (ADR-0018): run / install / uninstall / status the loopback doorway",
+        description=(
+            "Opt-in resident doorway: loopback-only, token-authed HTTP over the SAME "
+            "six MCP tools and consent semantics. The agent itself stays on-demand; "
+            "'install' adds a systemd --user unit so the doorway exists after login. "
+            "Packaging never enables this; only you do."
+        ),
+    )
+    p_serve.add_argument("--bind", default="127.0.0.1", help="loopback address only")
+    p_serve.add_argument("--port", type=int, default=8777)
+    p_serve.set_defaults(func=_cmd_serve_run)  # bare `jarvis serve` runs the doorway
+    p_serve_sub = p_serve.add_subparsers(dest="serve_command")
+    p_serve_run = p_serve_sub.add_parser(
+        "run", help="run the doorway in the foreground (default when no subcommand)"
+    )
+    p_serve_run.set_defaults(func=_cmd_serve_run)
+    p_serve_install = p_serve_sub.add_parser(
+        "install", help="write + enable the systemd --user unit (and optionally GUI autostart)"
+    )
+    p_serve_install.add_argument("--port", type=int, default=8777)
+    p_serve_install.add_argument(
+        "--with-gui",
+        action="store_true",
+        help="also write an XDG autostart entry for the GUI frontend (probed first)",
+    )
+    p_serve_install.set_defaults(func=_cmd_serve_install)
+    p_serve_uninstall = p_serve_sub.add_parser(
+        "uninstall", help="remove unit/autostart/token; back to pure on-demand"
+    )
+    p_serve_uninstall.set_defaults(func=_cmd_serve_uninstall)
+    p_serve_status = p_serve_sub.add_parser(
+        "status", help="report the truth of each residency piece"
+    )
+    p_serve_status.set_defaults(func=_cmd_serve_status)
 
     p_doctor = sub.add_parser(
         "doctor",

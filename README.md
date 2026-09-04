@@ -6,14 +6,14 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.11.0` — M0–M11 complete + GUI front-end contract (`javris-frontend/1`) + playbook
-catalog breadth (ADR-0016)**: deterministic engine + LLM planner with failure semantics (persisted
-breaker, failure taxonomy, grounded answers, `--no-ai` contract) + a purpose-built proposals-only
-neural intent classifier + safety kernel + cited knowledge + MCP surface + verified skill packs +
-charters + integrity doctor + GUI control, **56 deterministic playbooks** across guarded families
-(read-only inspection, file management, process/service control), packaged (wheel/deb/rpm/AUR) and
-install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` … `v1.11.0-rc1` await
-the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
+**Status: `v1.12.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+residency (ADR-0018)**: deterministic engine + LLM planner with failure semantics + a
+proposals-only neural intent classifier + safety kernel + cited knowledge + MCP surface +
+verified skill packs + charters + integrity doctor + GUI control + **56 deterministic playbooks**
+across guarded families + an opt-in loopback doorway for resident front-ends, packaged
+(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
+`v1.0.0-rc1` … `v1.12.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
+See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -118,6 +118,23 @@ Some things are **deliberately absent** and documented as such in ADR-0016: `dd`
 partition editors, `shutdown`/`reboot`, downloads-and-pipes (`curl | sh`), stream editing
 (`sed -i`), and permission changes (`chmod`/`chown`) have no playbook at all — they are
 unmatchable by design, and tests prove it. `jarvis playbooks` shows the full catalog with tiers.
+
+## Hybrid residency (ADR-0018)
+
+By default **nothing runs unless you run it**. If you want front-ends (the GUI, scripts) to
+reach JARVIS any time after login without starting it yourself, opt in:
+
+```bash
+jarvis serve install [--with-gui]   # systemd --user unit (+ GUI autostart if installed)
+jarvis serve                        # or run the doorway in the foreground
+jarvis serve status / uninstall     # inspect / return to pure on-demand
+```
+
+The doorway is **loopback-only and token-authenticated** (token `0600` in the state dir, never
+logged). It serves exactly the six MCP tools with **identical consent semantics**: T2 still
+needs a per-call `allow: true`, T3 is always refused, there is no persistent yes and no
+exec passthrough — a doorway, never an actor. Packaging never enables it; `uninstall` removes
+every trace.
 
 ## MCP surface (ADR-0013 M9a)
 
