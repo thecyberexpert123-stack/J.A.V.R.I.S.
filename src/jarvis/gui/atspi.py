@@ -21,19 +21,22 @@ def atspi_available() -> bool:
 
 
 def desktop_window_titles() -> tuple[list[str] | None, str]:
-    """Return (titles, reason). titles=None with a reason when unavailable."""
+    """Guarded window titles (ADR-0022): blocked apps never appear at all.
+
+    Contract unchanged from ADR-0010: (titles, reason); titles=None with a
+    reason when unavailable. Since ADR-0022 the walk runs through the guard
+    walls, so the GUI service cannot list/focus/type into a blocked app.
+    """
     if not atspi_available():
         return None, "pyatspi not installed (distro package python3-pyatspi)"
     try:
         import pyatspi  # type: ignore[import-not-found]
 
         desktop = pyatspi.Registry.getDesktop(0)
-        titles: list[str] = []
-        for app in desktop:
-            for frame in app:
-                if frame.getRoleName() in ("frame", "dialog", "window"):
-                    titles.append(frame.name or "(untitled)")
-        return titles, "pyatspi accessibility tree"
+        from jarvis.desktop.read import guarded_titles
+
+        titles, reason = guarded_titles(desktop)
+        return titles, reason
     except Exception as exc:
         return None, f"pyatspi present but unavailable: {exc}"
 

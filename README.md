@@ -6,14 +6,15 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.15.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+**Status: `v1.16.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
 residency (ADR-0018) + voice (ADR-0019) + owner-taught memory (ADR-0020) + scheduled briefings
-(ADR-0021)**: deterministic engine + LLM planner with failure semantics + a proposals-only
-neural intent classifier + safety kernel + cited knowledge + MCP surface + verified skill packs +
-charters + integrity doctor + GUI control + **56 deterministic playbooks** + an opt-in loopback
-doorway + push-to-talk voice + plain-file memory + propose-only scheduled briefings, packaged
-(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
-`v1.0.0-rc1` … `v1.15.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
+(ADR-0021) + guarded desktop awareness (ADR-0022)**: deterministic engine + LLM planner with
+failure semantics + a proposals-only neural intent classifier + safety kernel + cited knowledge
++ MCP surface + verified skill packs + charters + integrity doctor + GUI control + **56
+deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice + plain-file memory
++ propose-only briefings + a fail-closed read-only AT-SPI tier, packaged (wheel/deb/rpm/AUR)
+and install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` …
+`v1.16.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
 See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
@@ -170,6 +171,23 @@ suggestions, unmapped requests, disk pressure via `statvfs` — zero subprocesse
 execute commands. The v1 policy is deterministic and inspectable; silence is a first-class,
 ledgered outcome with a reason. `--quiet` (timer mode) delivers via `briefings/latest.md` and
 an optional desktop notification.
+
+## Guarded desktop awareness (ADR-0022)
+
+The read-only tier of the AT-SPI family — JARVIS can see the desktop's published
+accessibility tree, inside fail-closed walls:
+
+```bash
+jarvis desktop read     # guarded outline; blocked apps / password fields / sensitive names
+jarvis desktop status   # availability + content-free audit totals
+```
+
+Three walls, in order: blocked applications (password managers, keyrings, polkit/askpass,
+terminals) are never read at all; `password text` roles are withheld **before their name is
+read**; sensitive names are redacted before display. Every read is audited content-free
+(counts only — titles are never persisted), and the GUI service inherits the same walls:
+a blocked app cannot be listed, focused, or typed into. On-demand only — no scheduled or
+ambient reads; input injection stays parked for its own ADR.
 
 ## Hybrid residency (ADR-0018)
 

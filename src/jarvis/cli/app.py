@@ -1506,6 +1506,43 @@ def _cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_desktop(args: argparse.Namespace) -> int:
+    """Guarded desktop awareness (ADR-0022): read / status — walls + audit."""
+    import json as _json
+
+    from jarvis.desktop.read import DesktopAudit, read_desktop
+    from jarvis.gui.atspi import atspi_available
+    from jarvis.safety.tiers import SafetyRefusal
+
+    action = getattr(args, "desktop_command", None) or "read"
+    try:
+        if action == "read":
+            result, reason = read_desktop(source="cli")
+            if result is None:
+                print(f"desktop awareness unavailable here: {reason}")
+                print("read-only tier; nothing was read and nothing was audited")
+                return 0
+            for line in result.lines:
+                print(line)
+            audit = DesktopAudit()
+            print(
+                f"guard summary: {len(result.apps_blocked)} app(s) withheld, "
+                f"{result.roles_withheld} password field(s) withheld, "
+                f"{result.names_redacted} name(s) redacted, "
+                f"{result.nodes_read} node(s)"
+                + (", TRUNCATED (node budget)" if result.truncated else "")
+            )
+            print(f"audit: {audit.path} (content-free: counts only, never titles)")
+            return 0
+        if action == "status":
+            print(_json.dumps({"available": atspi_available(), **DesktopAudit().stats()}, indent=2))
+            return 0
+    except SafetyRefusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1873,6 +1910,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_brief_sub.add_parser("uninstall", help="remove the timer; back to on-demand").set_defaults(
         func=_cmd_brief, brief_command="uninstall"
     )
+
+    p_desktop = sub.add_parser(
+        "desktop",
+        help="guarded desktop awareness: read-only AT-SPI with walls + audit (ADR-0022)",
+    )
+    p_desktop_sub = p_desktop.add_subparsers(dest="desktop_command")
+    p_desktop.set_defaults(func=_cmd_desktop, desktop_command=None)  # bare = read
+    p_desktop_read = p_desktop_sub.add_parser(
+        "read", help="guarded outline of the accessibility tree (read-only, audited)"
+    )
+    p_desktop_read.set_defaults(func=_cmd_desktop, desktop_command="read")
+    p_desktop_status = p_desktop_sub.add_parser(
+        "status", help="availability + audit totals (reads, withheld, redacted)"
+    )
+    p_desktop_status.set_defaults(func=_cmd_desktop, desktop_command="status")
 
     p_doctor = sub.add_parser(
         "doctor",

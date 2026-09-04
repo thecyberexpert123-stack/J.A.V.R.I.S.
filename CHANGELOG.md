@@ -49,6 +49,53 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.16.0] - 2026-09-04 — guarded desktop awareness: the read-only AT-SPI tier (roadmap R4, ADR-0022)
+
+"Continue" — roadmap R4 from the deep research. JARVIS has been an AT-SPI session-bus client
+since M9e — a client of the boundary the research names ("AT-SPI exposes window contents to any
+client on your session bus") — with **no guards at the data boundary**. This release adds the
+published hardening posture as one shared, fail-closed guard family, shipped as the read-only
+tier.
+
+### Added
+- **`src/jarvis/desktop/guards.py`** — frozen constants + pure predicates, pinned by tests,
+  shared by every reader (CLI and GUI service alike):
+  **BLOCKED_APPS** (password managers, keyrings/secret services, polkit/pkexec/askpass agents,
+  terminal emulators — shell content is out of scope for a read-only agent); **PASSWORD_ROLES**
+  (`password text`); the sensitive-name pattern (word-boundary regex, so "author", "passport",
+  "pinning" do not match); hygiene (control chars stripped, collapsed, ≤120 chars).
+  Matching is fail-closed by explicit bias: false-positive blocks are acceptable,
+  false-negative reads of a secret-bearing surface are not.
+- **`src/jarvis/desktop/read.py`** — the guarded walk through three ordered walls: (1) blocked
+  apps' subtrees are never read at all, disclosed as `[withheld: application '<name>' is on the
+  blocked list]`; (2) password-role nodes are withheld **before their name is ever read**;
+  (3) sensitive names are read, then redacted before display/persist. Budgets: depth ≤ 4,
+  512 nodes with an honest truncation marker; unreadable nodes degrade to `[unreadable node]`.
+  The walk is read-only by construction — a test pins that no mutating call is ever made.
+- **Content-free per-op audit (D4):** every read appends to `<state>/desktop/ledger.jsonl` —
+  timestamp, source (cli/gui), blocked-app identifiers, counts, truncated flag. **No title or
+  field content is ever persisted** (a test pins that a distinctive window title appears
+  nowhere in the ledger bytes), and desktop content never enters planner prompts, memory, or
+  briefings (situation-aware combination parked for a future ADR).
+- **`jarvis desktop read` / `desktop status`** — on-demand, owner-issued reads only; no
+  scheduled or ambient reading. Unavailability is the honest ADR-0010-style gap
+  (`(None, reason)` / exit 0 with disclosure, nothing audited when nothing was read).
+- Docs: ADR-0022; README desktop-awareness section. Input injection (Wayland portals /
+  ydotool / compositor APIs) stays parked for its own ADR; the `run_shell`-style escape hatch
+  of production MCP servers remains rejected.
+
+### Changed
+- **`gui.atspi.desktop_window_titles()` is rewired through the guard** (ADR-0022 D5, contract
+  unchanged): the GUI service's window list / focus / type flows now cannot list, focus, or
+  type into a blocked application at all — the guard inherits downward, never upward.
+
+### Tests
+- +27 (`tests/test_desktop.py`): the exact blocklist/role pins, word-boundary redaction cases,
+  hygiene, walk walls (no descent into blocked apps, no name read on password fields,
+  budget/depth caps, honest unreadable nodes), the read-only-discipline pin, content-free
+  audit guarantees, guarded titles + the GUI rewire, and CLI read/status/bare/unavailable.
+  Suite: **759 passed + 2 honest skips** (761 collected). ruff + mypy clean.
+
 ## [1.15.0] - 2026-09-04 — scheduled briefings: Level-2 proactivity, propose-only (roadmap R3, ADR-0021)
 
 "Continue" — roadmap R3 from the deep research. The agent gains a polite, bounded presence: a
