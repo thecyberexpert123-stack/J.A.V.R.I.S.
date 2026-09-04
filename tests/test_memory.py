@@ -82,15 +82,15 @@ def test_whitespace_is_normalized(store: MemoryStore) -> None:
 
 
 def test_list_orders_newest_first(store: MemoryStore, monkeypatch: pytest.MonkeyPatch) -> None:
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     tick = {"n": 0}
 
     class FakeDT:
         @staticmethod
-        def now(tz: object = UTC) -> datetime:
+        def now(tz: object = timezone.utc) -> datetime:
             tick["n"] += 1
-            return datetime.now(UTC) + timedelta(seconds=tick["n"])
+            return datetime.now(timezone.utc) + timedelta(seconds=tick["n"])
 
     monkeypatch.setattr("jarvis.memory.store.datetime", FakeDT)
     first = store.remember("older fact")
@@ -106,15 +106,15 @@ def test_prompt_block_empty_store_is_empty_string(store: MemoryStore) -> None:
 def test_prompt_block_is_delimited_and_bounded(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     tick = {"n": 0}
 
     class FakeDT:
         @staticmethod
-        def now(tz: object = UTC) -> datetime:
+        def now(tz: object = timezone.utc) -> datetime:
             tick["n"] += 1
-            return datetime.now(UTC) + timedelta(seconds=tick["n"])
+            return datetime.now(timezone.utc) + timedelta(seconds=tick["n"])
 
     monkeypatch.setattr("jarvis.memory.store.datetime", FakeDT)
     for i in range(15):
