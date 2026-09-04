@@ -108,7 +108,7 @@ HAND_LABELED: list[tuple[str, str]] = [
     ("open firefox", "gui.launch"),
     ("launch the calculator app", "gui.launch"),
     ("append remember the milk to ~/notes.txt", "file.append"),
-    # ADR-0023: the widened 56-playbook vocabulary, hand-checked
+    # ADR-0023/ADR-0024: the widened 57-playbook vocabulary, hand-checked
     ("show the first 20 lines of ~/notes.txt", "fs.head"),
     ("tail of /var/log/syslog", "fs.tail"),
     ("show the contents of ~/checklist.md", "fs.read"),
@@ -153,6 +153,8 @@ HAND_LABELED: list[tuple[str, str]] = [
     ("disable redis at boot", "svc.disable"),
     ("kill process 1234", "proc.kill"),
     ("terminate spotify", "proc.kill_name"),
+    ("health check", "sys.digest"),
+    ("analyze my system", "sys.digest"),
 ]
 
 HAND_OOD: list[str] = [

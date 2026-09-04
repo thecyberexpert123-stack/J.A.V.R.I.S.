@@ -49,6 +49,49 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.18.0] - 2026-09-04 — synthesis-over-sources digest: the F6 playbook `sys.digest` (roadmap R5b, ADR-0024)
+
+"Continue" — the last parked R5 item that was not owner-gated. The research scored F6 (data
+analysis and distillation) *partial*: "LLM synthesis [is] still hallucination-prone", and the
+gap line is verbatim — "no synthesis-over-sources playbook". One phrase now yields a cited,
+deterministic health digest computed from the exact pinned commands of three existing
+read-only playbooks. **Catalog grows 56 → 57 by the breadth discipline** — the first growth
+since ADR-0016, and it went through its own ADR.
+
+### Added
+- **`sys.digest` (tier T0, read-only; ADR-0024):** "system digest" / "health check" /
+  "analyze my system" → three source steps (`df -h`, `free -h`, `uptime` — the *same pinned
+  argv* as `fs.disk_free`, `sys.memory`, `sys.uptime`) and a VERIFY stage that **is** the
+  synthesis: `jarvis.system.digest.synthesize_digest` is a pure-stdlib function over the
+  captured stdout — no LLM anywhere in the path. Zero engine/orchestrator changes; the digest
+  flows through the standard verification detail and is journaled with the task.
+- **Disclosed thresholds, honest sources:** warn at disk ≥ 85% used (root), memory ≥ 85% used
+  (available vs total), load-1 > core count; an unparseable source becomes an explicit
+  `[source unreadable: …]` line — never a guess. Every digest line names its source playbook
+  and the header discloses "computed deterministically from 3 read-only sources (no LLM)".
+  Warnings are findings, not failures; `ok` is true iff at least one source was readable.
+- **Matcher safety:** anchored bare phrases only. The battery pins the shadow set — and caught
+  a real one during development: "run a health check" was being caught by `gui.launch`'s
+  greedy T2 "run X" matcher; the digest matcher now claims its phrases *before* the T2
+  launcher can (verified: "run a health check" → `sys.digest`, T0, no launch attempted).
+- **Vocabulary retrain per the ADR-0023 cadence:** the trainer derives the new label from
+  `PLAYBOOKS` automatically; corpus gains the `sys.digest` family; gates re-earned at
+  58 classes: **top-1 0.997 / top-3 1.000 / OOD abstention 1.000**; model 126 KB;
+  byte-reproducible. Reconstruction stays frozen (no extractor — pinned).
+
+### Tests
+- +33 (`tests/test_digest.py`): matcher anchors + the no-shadow set (incl. the gui.launch
+  regression), build == the three source argvs (all T0, no user data), the pure synthesizer
+  (determinism, citations, thresholds, unreadable/partial honesty, hygiene, no-fabrication),
+  verify wiring (incl. optional-source skip, missing results), read-only undo, and the CLI
+  dry-run contract. Catalog pins updated 56 → 57 (playbooks/breadth/cli/brief).
+  Suite: **794 passed + 2 honest skips** (796 collected). ruff + mypy clean.
+
+### Still parked (owner-gated)
+- Capability manifests (ADR-0017 D2) — "no code moves until the owner says so." Publishing any
+  of the 21 drafts, LICENSE, PyPI/AUR, PR #1, Level-3 briefing policy, memory agent-capture,
+  GUI input injection — all await the owner.
+
 ## [1.17.0] - 2026-09-04 — intent vocabulary retrain: the classifier finally speaks all 56 playbooks (roadmap R5a, ADR-0023)
 
 "Continue" — the first parked R5 item. The proposals-only classifier (ADR-0015, v1.10.0) was

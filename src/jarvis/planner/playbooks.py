@@ -32,6 +32,7 @@ from jarvis.safety.tiers import (
     validate_search_query,
     validate_unit_name,
 )
+from jarvis.system.digest import synthesize_digest
 from jarvis.system.models import (
     InvalidInputError,
     MachineProfile,
@@ -665,6 +666,65 @@ def _verify_sysinfo(
 
 
 # --------------------------------------------------------------------------
+# sys.digest — synthesis over sources (ADR-0024): computed, never generated
+# --------------------------------------------------------------------------
+
+_MATCH_DIGEST = re.compile(
+    r"^(?:"
+    r"(?:system|machine)\s+(?:digest|overview|synthesis|report|health(?:\s+report)?)"
+    r"|(?:please\s+|can\s+you\s+|run\s+a\s+|do\s+a\s+)?health\s+(?:check|report)"
+    r"|(?:analyze|analyse)(?:\s+the|\s+my)?\s+(?:system|machine)"
+    r"|digest(?:\s+the)?\s+(?:system|machine)"
+    r"|synthesize(?:\s+the)?\s+(?:system|machine)(?:\s+(?:state|health))?"
+    r")$"
+)
+
+
+def _match_digest(text: str) -> Params | None:
+    return {} if _MATCH_DIGEST.match(text) else None
+
+
+def _build_digest(params: Params, profile: MachineProfile) -> list[PlannedStep]:
+    # The sources are the exact pinned argv of three existing T0 playbooks.
+    return [
+        PlannedStep(
+            description="filesystem usage (source: fs.disk_free)",
+            argv=("df", "-h"),
+            tier=Tier.T0,
+            timeout_s=30.0,
+        ),
+        PlannedStep(
+            description="memory usage (source: sys.memory)",
+            argv=("free", "-h"),
+            tier=Tier.T0,
+            timeout_s=30.0,
+            optional=True,  # procps is absent on some minimal systems
+        ),
+        PlannedStep(
+            description="uptime and load (source: sys.uptime)",
+            argv=("uptime",),
+            tier=Tier.T0,
+            timeout_s=30.0,
+        ),
+    ]
+
+
+def _verify_digest(
+    params: Params,
+    profile: MachineProfile,
+    runner: Runner,
+    step_results: Sequence[ExecResult | None] | None,
+) -> Verification:
+    def _text(index: int) -> str:
+        if not step_results or index >= len(step_results) or step_results[index] is None:
+            return ""
+        return step_results[index].stdout_tail or ""  # type: ignore[union-attr]
+
+    report = synthesize_digest(_text(0), _text(1), _text(2))
+    return Verification(ok=report.ok, detail="\n".join(report.lines))
+
+
+# --------------------------------------------------------------------------
 # registry + dispatch
 # --------------------------------------------------------------------------
 
@@ -812,6 +872,15 @@ _CORE_PLAYBOOKS: tuple[Playbook, ...] = (
         match=_match_sysinfo,
         build=_build_sysinfo,
         verify=_verify_sysinfo,
+        undo=_undo_readonly,
+    ),
+    Playbook(
+        id="sys.digest",
+        description="synthesize a cited health digest from read-only sources (no LLM; ADR-0024)",
+        tier=Tier.T0,
+        match=_match_digest,
+        build=_build_digest,
+        verify=_verify_digest,
         undo=_undo_readonly,
     ),
     # file.append is built in planner.fileops (breaks an import cycle); its

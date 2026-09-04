@@ -6,17 +6,17 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.17.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+**Status: `v1.18.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
 residency (ADR-0018) + voice (ADR-0019) + owner-taught memory (ADR-0020) + scheduled briefings
-(ADR-0021) + guarded desktop awareness (ADR-0022) + full-vocabulary intent retrain
-(ADR-0023)**: deterministic engine + LLM planner with failure semantics + a proposals-only
-neural intent classifier covering all 56 playbooks + safety kernel + cited knowledge + MCP
-surface + verified skill packs + charters + integrity doctor + GUI control + **56
-deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice + plain-file
-memory + propose-only briefings + a fail-closed read-only AT-SPI tier, packaged
-(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
-`v1.0.0-rc1` … `v1.17.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
-See `INSTALL.md`.**
+(ADR-0021) + guarded desktop awareness (ADR-0022) + full-vocabulary intent retrain (ADR-0023)
++ synthesis digest (ADR-0024)**: deterministic engine + LLM planner with failure semantics + a
+proposals-only neural intent classifier covering all 57 playbooks + safety kernel + cited
+knowledge + MCP surface + verified skill packs + charters + integrity doctor + GUI control +
+**57 deterministic playbooks** incl. the F6 synthesis digest + an opt-in loopback doorway +
+push-to-talk voice + plain-file memory + propose-only briefings + a fail-closed read-only
+AT-SPI tier, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI.
+Review candidates `v1.0.0-rc1` … `v1.18.0-rc1` await the owner's release decisions. Reports:
+`evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -98,7 +98,7 @@ AI.
 network (shipped weights, stdlib inference) ranks the playbook vocabulary for
 loosely-phrased requests when the engine and the LLM planner have both
 declined. The vocabulary is **derived from the live catalog** — the trainer
-labels are `sorted(PLAYBOOKS ids) + unknown`, so all 56 playbooks are rankable
+labels are `sorted(PLAYBOOKS ids) + unknown`, so all 57 playbooks are rankable
 and a test makes staleness loud. It is proposals-only by construction:
 reconstruction extractors stay limited to the vetted families (paths are never
 reconstructed), suggestions must re-pass the real matchers and are printed for
@@ -108,7 +108,7 @@ byte-reproducible).
 
 ## Playbook breadth (ADR-0016)
 
-`jarvis playbooks` lists **56 deterministic playbooks** (was 12). Breadth follows one rule: every
+`jarvis playbooks` lists **57 deterministic playbooks** (was 12). Breadth follows one rule: every
 new command enters through a **guarded family** — a pinned binary, a fixed flag prefix, and
 argument slots validated at match time (a user flag such as `-rf` is a refusal that makes the
 intent unmatchable, never a sanitize; shell metacharacters are banned outright). Families:
