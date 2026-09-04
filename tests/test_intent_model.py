@@ -26,7 +26,7 @@ from jarvis.intent.classifier import (
     suggest_intent,
 )
 from jarvis.journal.sqlite import default_db_path, state_dir
-from jarvis.planner.playbooks import match_intent
+from jarvis.planner.playbooks import PLAYBOOKS, match_intent
 
 # ---------------------------------------------------------------------------
 # artifact + structural contract
@@ -42,8 +42,21 @@ def test_model_artifact_shape() -> None:
     assert document["labels"][-1] == UNKNOWN_LABEL
     assert len(document["w1"]) == 256 and len(document["w1"][0]) == 48
     assert len(document["w2"]) == 48
+    assert len(document["w2"][0]) == len(document["labels"])  # softmax width == vocabulary
     size_kb = len(raw) / 1024
     assert size_kb < 400  # the model must stay tiny (ADR-0015)
+
+
+def test_vocabulary_covers_the_whole_catalog() -> None:
+    """ADR-0023 D1: the kernel owns the vocabulary; staleness must be loud."""
+    raw = (classifier_module.resources.files("jarvis.intent") / "model.json").read_text(
+        encoding="utf-8"
+    )
+    document = json.loads(raw)
+    expected = [*sorted({p.id for p in PLAYBOOKS}), UNKNOWN_LABEL]
+    assert document["labels"] == expected
+    assert load_model() is not None
+    assert load_model().labels == expected  # type: ignore[union-attr]
 
 
 def test_every_suggestion_is_engine_legal() -> None:
@@ -95,6 +108,51 @@ HAND_LABELED: list[tuple[str, str]] = [
     ("open firefox", "gui.launch"),
     ("launch the calculator app", "gui.launch"),
     ("append remember the milk to ~/notes.txt", "file.append"),
+    # ADR-0023: the widened 56-playbook vocabulary, hand-checked
+    ("show the first 20 lines of ~/notes.txt", "fs.head"),
+    ("tail of /var/log/syslog", "fs.tail"),
+    ("show the contents of ~/checklist.md", "fs.read"),
+    ("how many lines in ~/notes.txt", "fs.count"),
+    ("when was ~/notes.txt last modified", "fs.stat"),
+    ("what type of file is /etc/hosts", "fs.file_type"),
+    ("where is git installed", "fs.which"),
+    ("how much disk space is free", "fs.disk_free"),
+    ("how much space does ~/projects use", "fs.disk_usage"),
+    ("list the files in ~/Documents", "fs.list"),
+    ("find files named report", "fs.find"),
+    ("search ~/notes.txt for TODO", "fs.search"),
+    ("make a new folder photos", "fs.mkdir"),
+    ("create an empty file notes", "fs.touch"),
+    ("copy ~/notes.txt to /tmp/TODO", "fs.copy"),
+    ("move ~/notes.txt to ~/projects", "fs.move"),
+    ("delete the file /tmp/TODO", "fs.remove"),
+    ("symlink ~/notes.txt to /tmp/TODO", "fs.link"),
+    ("md5 of ~/notes.txt", "sys.checksum"),
+    ("how much ram is free", "sys.memory"),
+    ("what processes are running", "sys.processes"),
+    ("how long has this machine been up", "sys.uptime"),
+    ("what is my hostname", "sys.hostname"),
+    ("what cpu do i have", "sys.cpus"),
+    ("list pci devices", "sys.pci"),
+    ("list usb devices", "sys.usb"),
+    ("what disks do i have", "sys.blocks"),
+    ("what ports are listening", "sys.sockets"),
+    ("show my ip address", "sys.network"),
+    ("show the routing table", "sys.routes"),
+    ("show the last 50 journal entries", "sys.journal"),
+    ("show the kernel ring buffer", "sys.kernel_log"),
+    ("who is logged in", "sys.users"),
+    ("show recent logins", "sys.login_history"),
+    ("list environment variables", "sys.env"),
+    ("what user am i", "sys.identity"),
+    ("what time is it", "sys.date"),
+    ("ping example.com", "net.ping"),
+    ("what ip does example.com resolve to", "net.dns"),
+    ("stop the docker service", "svc.stop"),
+    ("restart the docker service", "svc.restart"),
+    ("disable redis at boot", "svc.disable"),
+    ("kill process 1234", "proc.kill"),
+    ("terminate spotify", "proc.kill_name"),
 ]
 
 HAND_OOD: list[str] = [
@@ -133,6 +191,23 @@ def test_hand_ood_abstains_from_suggestions() -> None:
 def test_file_append_has_no_slot_extractor() -> None:
     # Deliberate: paths are not reconstructed from model output — disclosure only.
     assert suggest_intent("append remember the milk to ~/notes.txt") is None
+
+
+def test_widened_families_rank_but_reconstruct_nothing() -> None:
+    """ADR-0023 D4: disclosure widens; slot extractors stay frozen at the 12."""
+    for text in (
+        "show the first 20 lines of ~/notes.txt",
+        "tail of /var/log/syslog",
+        "restart the docker service",
+        "kill process 1234",
+        "delete the file /tmp/TODO",
+    ):
+        assert suggest_intent(text) is None, text
+    assert "fs.tail" in [label for label, _prob in rank_intents("tail of /var/log/syslog")]
+    assert "svc.restart" in [label for label, _prob in rank_intents("restart the docker service")]
+    assert "fs.head" in [
+        label for label, _prob in rank_intents("show the first 20 lines of ~/notes.txt")
+    ]
 
 
 def test_canonical_suggestions() -> None:

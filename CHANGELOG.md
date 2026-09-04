@@ -49,6 +49,48 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.17.0] - 2026-09-04 — intent vocabulary retrain: the classifier finally speaks all 56 playbooks (roadmap R5a, ADR-0023)
+
+"Continue" — the first parked R5 item. The proposals-only classifier (ADR-0015, v1.10.0) was
+trained against a 12-intent catalog; the catalog is now 56 playbooks across eight families, so
+**44 playbook ids were invisible to the model** — unrankable in "did you mean" disclosures,
+unproposeable. This release retrains it over the full vocabulary. Its authority is unchanged:
+still proposals-only, matcher-disposed, `--no-ai`-switchable.
+
+### Changed
+- **The kernel now owns the vocabulary (ADR-0023 D1):** `training/train_intent.py` derives
+  `LABELS` from `PLAYBOOKS` (`sorted(ids) + [unknown]`) instead of hand-listing — the same
+  single-source-of-truth discipline as `suggest_intent` importing `match_intent`. Catalog
+  drift flows into the next training run; a new test pins
+  `model["labels"] == sorted(PLAYBOOKS ids) + [unknown]` so shipped weights and the live
+  catalog can never diverge silently.
+- **Corpus rebuilt per family (D3):** every one of the 56 ids has a synthetic template corpus
+  written against the real matchers' accepted surface (cue-word discipline keeps
+  head/tail/read, the svc stop/restart/disable trio, and the proc pair apart). The stratified
+  holdout splits **unique** texts *before* seeded upsampling balances the train split — no
+  duplicate leakage in the gate numbers.
+- **Same gates, earned at 57 classes (D2):** holdout top-1 ≥ 0.88, top-3 ≥ 0.97, OOD
+  unknown-recall ≥ 0.80, evaluated on the rounded shipped weights, trainer refuses to write
+  on failure. Achieved: **top-1 0.998 / top-3 1.000 / abstention 1.000**; model 125 KB
+  (< 400 KB pin); byte-reproducible (verified by double training run, identical sha256).
+- **Reconstruction stays conservative (D4):** slot extractors remain frozen at the original
+  12 labels; the widened families rank in disclosures (`rank_intents`, the unknown-request
+  hint) but `suggest_intent` abstains on them — pinned by tests. Paths still never
+  reconstructed; the user typing the suggestion remains the sole consent path, including for
+  T2 families that gain only "did you mean" visibility.
+- Runtime inference unchanged (labels are data in `model.json`); the catalog **stays 56** —
+  no playbook, matcher, or authority surface changed.
+
+### Tests
+- +2 and widened: the vocabulary==catalog pin, softmax width == label count, 45 new
+  hand-labeled cases across the previously-invisible families (hand set now 67, independent
+  of the trainer's generator), and the rank-but-never-reconstruct pin for widened families.
+  Suite: **761 passed + 2 honest skips** (763 collected). ruff + mypy clean.
+
+### Still parked
+- Capability manifests (ADR-0017 D2) remain **owner-gated** — "no code moves until the owner
+  says so." Slot-extractor widening for the new families is future work with its own review.
+
 ## [1.16.0] - 2026-09-04 — guarded desktop awareness: the read-only AT-SPI tier (roadmap R4, ADR-0022)
 
 "Continue" — roadmap R4 from the deep research. JARVIS has been an AT-SPI session-bus client

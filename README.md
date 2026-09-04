@@ -6,15 +6,16 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.16.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+**Status: `v1.17.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
 residency (ADR-0018) + voice (ADR-0019) + owner-taught memory (ADR-0020) + scheduled briefings
-(ADR-0021) + guarded desktop awareness (ADR-0022)**: deterministic engine + LLM planner with
-failure semantics + a proposals-only neural intent classifier + safety kernel + cited knowledge
-+ MCP surface + verified skill packs + charters + integrity doctor + GUI control + **56
-deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice + plain-file memory
-+ propose-only briefings + a fail-closed read-only AT-SPI tier, packaged (wheel/deb/rpm/AUR)
-and install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` …
-`v1.16.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
+(ADR-0021) + guarded desktop awareness (ADR-0022) + full-vocabulary intent retrain
+(ADR-0023)**: deterministic engine + LLM planner with failure semantics + a proposals-only
+neural intent classifier covering all 56 playbooks + safety kernel + cited knowledge + MCP
+surface + verified skill packs + charters + integrity doctor + GUI control + **56
+deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice + plain-file
+memory + propose-only briefings + a fail-closed read-only AT-SPI tier, packaged
+(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
+`v1.0.0-rc1` … `v1.17.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
 See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
@@ -93,13 +94,17 @@ journal record for owner review, and `--no-ai` (or `JARVIS_NO_AI=1`) disables
 every model path in one switch — the agent remains fully usable without any
 AI.
 
-**Learned intent recall (ADR-0015):** a tiny purpose-built neural network
-(~13K parameters, shipped weights, stdlib inference) ranks the playbook
-vocabulary for loosely-phrased requests when the engine and the LLM planner
-have both declined. It is proposals-only by construction: suggestions must
-re-pass the real matchers and are printed for you to type (`jarvis do …`),
-never executed; `--no-ai` switches it off. Retrain any time:
-`python training/train_intent.py` (gated, deterministic).
+**Learned intent recall (ADR-0015, ADR-0023):** a tiny purpose-built neural
+network (shipped weights, stdlib inference) ranks the playbook vocabulary for
+loosely-phrased requests when the engine and the LLM planner have both
+declined. The vocabulary is **derived from the live catalog** — the trainer
+labels are `sorted(PLAYBOOKS ids) + unknown`, so all 56 playbooks are rankable
+and a test makes staleness loud. It is proposals-only by construction:
+reconstruction extractors stay limited to the vetted families (paths are never
+reconstructed), suggestions must re-pass the real matchers and are printed for
+you to type (`jarvis do …`), never executed; `--no-ai` switches it off.
+Retrain any time: `python training/train_intent.py` (gated, deterministic,
+byte-reproducible).
 
 ## Playbook breadth (ADR-0016)
 
