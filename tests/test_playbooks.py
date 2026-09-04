@@ -6,16 +6,22 @@ import pytest
 
 from conftest import FakeRunner
 from jarvis.execution.runner import ExecResult
+from jarvis.planner.file_cmds import FILE_PLAYBOOKS
+from jarvis.planner.inspect_cmds import INSPECT_PLAYBOOKS
 from jarvis.planner.models import UndoStatus
 from jarvis.planner.playbooks import PLAYBOOKS, match_intent
+from jarvis.planner.proc_cmds import PROC_PLAYBOOKS
 from jarvis.safety.tiers import SafetyRefusal, Tier
 from jarvis.system.models import InvalidInputError, UnsupportedError
 
 
-def test_registry_has_exactly_twelve_playbooks() -> None:
-    assert len(PLAYBOOKS) == 12
+def test_registry_has_exactly_fifty_six_playbooks() -> None:
+    """Catalog = guarded families (ADR-0016) + the 12 core playbooks."""
+    assert len(PLAYBOOKS) == 56
     ids = {pb.id for pb in PLAYBOOKS}
-    assert ids == {
+    assert len(ids) == 56  # no duplicate ids
+    # every core playbook survives
+    assert {
         "pkg.install",
         "pkg.remove",
         "pkg.search",
@@ -28,7 +34,11 @@ def test_registry_has_exactly_twelve_playbooks() -> None:
         "sys.info",
         "file.append",
         "gui.launch",
-    }
+    } <= ids
+    # every guarded family is present
+    assert {pb.id for pb in INSPECT_PLAYBOOKS} <= ids
+    assert {pb.id for pb in FILE_PLAYBOOKS} <= ids
+    assert {pb.id for pb in PROC_PLAYBOOKS} <= ids
 
 
 @pytest.mark.parametrize(
@@ -175,4 +185,13 @@ def test_tiers_of_all_playbooks() -> None:
         "file.append": Tier.T1,  # registry metadata; steps carry the real tier
     }
     for pb in PLAYBOOKS:
-        assert pb.tier is expected[pb.id], pb.id
+        if pb.id in expected:
+            assert pb.tier is expected[pb.id], pb.id
+        elif pb.id in {p.id for p in INSPECT_PLAYBOOKS}:
+            assert pb.tier is Tier.T0, pb.id  # readers are T0 (ADR-0016 D3)
+        elif pb.id in {p.id for p in FILE_PLAYBOOKS}:
+            assert pb.tier is Tier.T1, pb.id  # file mutations are T1
+        elif pb.id in {p.id for p in PROC_PLAYBOOKS}:
+            assert pb.tier is Tier.T2, pb.id  # process/service control is T2
+        else:  # pragma: no cover - guard against uncatalogued families
+            raise AssertionError(f"playbook outside known families: {pb.id}")

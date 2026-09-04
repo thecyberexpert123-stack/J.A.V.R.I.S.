@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Protocol
 
+from jarvis.execution.runner import ExecResult, Runner
 from jarvis.safety.tiers import Tier
+from jarvis.system.models import MachineProfile
+
+Params = dict[str, object]
 
 
 class TaskStatus(str, Enum):
@@ -75,3 +80,38 @@ class Refusal:
 
     reason: str
     hint: str = ""
+
+
+class _Build(Protocol):
+    def __call__(self, params: Params, profile: MachineProfile) -> list[PlannedStep]: ...
+
+
+class _Verify(Protocol):
+    def __call__(
+        self,
+        params: Params,
+        profile: MachineProfile,
+        runner: Runner,
+        step_results: Sequence[ExecResult | None] | None,
+    ) -> Verification: ...
+
+
+class _Undo(Protocol):
+    def __call__(self, params: Params, profile: MachineProfile) -> UndoPlan: ...
+
+
+@dataclass(frozen=True)
+class Playbook:
+    """One deterministic capability: NL match -> guarded build -> verify -> undo.
+
+    Home: planner.models (ADR-0016) so catalog family modules can construct
+    playbooks without importing the engine module (no import cycles).
+    """
+
+    id: str
+    description: str
+    tier: Tier
+    match: Callable[[str], Params | None]
+    build: _Build
+    verify: _Verify
+    undo: _Undo

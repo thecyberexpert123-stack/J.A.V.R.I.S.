@@ -6,12 +6,14 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.10.1` — M0–M11 complete + GUI front-end contract (`javris-frontend/1`)**: deterministic
-engine + LLM planner with failure semantics (persisted breaker, failure taxonomy, grounded answers,
-`--no-ai` contract) + a purpose-built proposals-only neural intent classifier + safety kernel +
-cited knowledge + MCP surface + verified skill packs + charters + integrity doctor + GUI control,
-packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
-`v1.0.0-rc1` … `v1.10.1-rc1` await the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
+**Status: `v1.11.0` — M0–M11 complete + GUI front-end contract (`javris-frontend/1`) + playbook
+catalog breadth (ADR-0016)**: deterministic engine + LLM planner with failure semantics (persisted
+breaker, failure taxonomy, grounded answers, `--no-ai` contract) + a purpose-built proposals-only
+neural intent classifier + safety kernel + cited knowledge + MCP surface + verified skill packs +
+charters + integrity doctor + GUI control, **56 deterministic playbooks** across guarded families
+(read-only inspection, file management, process/service control), packaged (wheel/deb/rpm/AUR) and
+install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` … `v1.11.0-rc1` await
+the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -96,6 +98,26 @@ have both declined. It is proposals-only by construction: suggestions must
 re-pass the real matchers and are printed for you to type (`jarvis do …`),
 never executed; `--no-ai` switches it off. Retrain any time:
 `python training/train_intent.py` (gated, deterministic).
+
+## Playbook breadth (ADR-0016)
+
+`jarvis playbooks` lists **56 deterministic playbooks** (was 12). Breadth follows one rule: every
+new command enters through a **guarded family** — a pinned binary, a fixed flag prefix, and
+argument slots validated at match time (a user flag such as `-rf` is a refusal that makes the
+intent unmatchable, never a sanitize; shell metacharacters are banned outright). Families:
+
+- **Read-only inspection (T0):** `fs.list/read/head/tail/count/stat/file_type/which/disk_usage/find/search/disk_free`,
+  `sys.memory/processes/uptime/date/hostname/cpus/pci/usb/blocks/sockets/network/routes/journal/kernel_log/users/login_history/env/identity/checksum`,
+  `net.ping` (bounded: 4 packets, 4 s), `net.dns`.
+- **File management (T1, root-gated where policy demands):** `fs.mkdir/touch/copy/move/remove/link`
+  — protected paths refused, undo planned before execution, deletion disclosed as irreversible.
+- **Process & service control (T2):** `svc.stop/restart/disable` (systemd-gated),
+  `proc.kill` (numeric pid), `proc.kill_name` (exact name, no patterns).
+
+Some things are **deliberately absent** and documented as such in ADR-0016: `dd`, `mkfs`,
+partition editors, `shutdown`/`reboot`, downloads-and-pipes (`curl | sh`), stream editing
+(`sed -i`), and permission changes (`chmod`/`chown`) have no playbook at all — they are
+unmatchable by design, and tests prove it. `jarvis playbooks` shows the full catalog with tiers.
 
 ## MCP surface (ADR-0013 M9a)
 

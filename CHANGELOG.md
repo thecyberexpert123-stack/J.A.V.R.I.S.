@@ -29,6 +29,66 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.11.0] - 2026-09-04 — playbook catalog breadth: 12 → 56 commands, same kernel discipline (owner-directed)
+
+Owner directive: "add almost every possible, Linux Command in the Playbook, also maintain my
+guidelines, too." Breadth is delivered the only way this project allows: more **guarded
+families** — fixed argv, validated arguments, tier gates, honest undo — never a raw passthrough.
+
+### Added
+- **ADR-0016** (`docs/adr/0016-playbook-catalog-breadth.md`): spec+factory design for catalog
+  breadth; argument policy (user flags refused — a leading dash is a refusal, never a sanitize;
+  shell metacharacters banned in every slot; 200-char bound); tier map (readers T0, file
+  mutations T1, process/system control T2); the documented **never-list** (`dd`, `mkfs*`,
+  `fdisk`/`parted`, `shutdown`/`reboot`/`halt`, `curl`/`wget`, `sed -i`/`awk`, `chmod`/`chown`
+  — no playbook exists for these; they are unmatchable by design); fs.* requests are matched
+  case-preserved while the LLM prompt vocabulary stays the core twelve.
+- **`planner/inspect_cmds.py`** — 33 read-only playbooks (T0): file inspection (`fs.list`,
+  `fs.read`, `fs.head`, `fs.tail`, `fs.count`, `fs.stat`, `fs.file_type`, `fs.which`,
+  `fs.disk_usage`, `fs.find`, `fs.search`), system probes (`sys.memory`, `sys.processes`,
+  `sys.uptime`, `sys.date`, `sys.hostname`, `sys.cpus`, `sys.pci`, `sys.usb`, `sys.blocks`,
+  `sys.sockets`, `sys.network`, `sys.routes`, `sys.journal`, `sys.kernel_log`, `sys.users`,
+  `sys.login_history`, `sys.env`, `sys.identity`, `sys.checksum`, `fs.disk_free`), and network
+  probes (`net.ping` bounded to 4 packets/4 s, `net.dns`). 31 of 33 come from one spec+factory
+  table; args are validated at MATCH time — a bad argument leaves the playbook unmatchable and
+  the request falls through to honest refusal.
+- **`planner/file_cmds.py`** — 6 file-mutation playbooks (T1): `fs.mkdir`, `fs.touch`,
+  `fs.copy`, `fs.move`, `fs.remove`, `fs.link`. Destinations run through the full edit policy
+  (protected paths refused; system prefixes escalate to root-gated T2 steps). Undo plans are
+  built at plan time with plan-time existence: mkdir/touch/copy/link get real reverse steps
+  with post-conditions; move gets a move-back; **deletion is disclosed as irreversible**.
+- **`planner/proc_cmds.py`** — 5 process/service playbooks (T2): `svc.stop`, `svc.restart`,
+  `svc.disable` (systemd-gated, unit names validated at match time) and `proc.kill` (numeric
+  pid only), `proc.kill_name` (`pkill -x`, exact name, patterns impossible). Service undo is
+  honest: the recorded reverse path is the inverse command, stated as `none_needed`.
+- `nearest_intents` and the M11 proposals cover the new vocabulary automatically. The neural
+  classifier remains the 13-class core model (proposals-only by construction); new families
+  surface through the lexical fallback — retraining is available but not required.
+
+### Changed
+- `Playbook`, its protocols, and `Params` moved to `planner/models.py` so catalog family
+  modules can construct playbooks without import cycles; `PLAYBOOKS` concatenates
+  families-first (guarded matchers answer before core package verbs).
+- `show …` phrasings (`show memory usage`, `show disk free`, `show running processes`, …) and
+  space-separated two-path forms (`mv /a /b`) are recognized; file-noun requests
+  ("what's in the file X") resolve to `fs.read`, not `ls`.
+
+### Security
+- Argument slots are kind-validated at match time (`path`/`name`/`host`/`glob`): flags
+  (`list files in -rf /`), unit-name escapes (`stop ../../etc`), and shell metacharacters are
+  refusals that make the intent unmatchable — the never-list is provably unmatchable by tests.
+- Builders conform to the kernel's static-argv rules (no empty elements, no paths after `--`);
+  defense-in-depth stayed in charge and shaped the catalog (three build shapes were corrected
+  to pass the kernel's checker, not to appease it — the checker was right).
+
+### Tests
+- +64 — the new `tests/test_playbook_breadth.py` (64 tests): catalog shape, family argv
+  allowlists, match-time refusal semantics, never-list unmatchability, plan/undo honesty per
+  family, protected-path refusals, systemd gating, core regressions. Registry/tier/CLI count
+  assertions updated in place.
+  Suite: **645 passed + 2 honest skips** (647 collected) at this milestone's commit.
+  mypy strict-clean; ruff clean (including format).
+
 ## [1.10.2] - 2026-09-04 — remaining backlog: CI rate-limit remedy, release-doc lessons, README status truth
 
 ### Fixed
@@ -54,7 +114,8 @@ below each entry were corrected in place.
   dispatch-token caveat, and the rate-limit-flake verification rule.
 
 ### Tests
-- +5; suite: **583 passed + 2 honest skips** (585 collected). No product behavior changes beyond
+- +5; suite: **581 passed + 2 honest skips** (583 collected; an earlier draft of this line said
+  583/585 — corrected 2026-09-04 by recount at `9584127`). No product behavior changes beyond
   the fetch path described above; wire (`javris-frontend/1`) untouched.
 
 ## [1.10.1] - 2026-09-04 — GUI coordination pass: contract re-verified against kernel 1.10.0 and GUI @ `d5233d5` (owner-directed)

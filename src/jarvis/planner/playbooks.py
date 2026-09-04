@@ -9,13 +9,21 @@ engine cannot map unambiguously is refused — never guessed (owner point 6).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from collections.abc import Sequence
 
 from jarvis.execution.runner import ExecResult, Runner
+from jarvis.planner.file_cmds import FILE_PLAYBOOKS
 from jarvis.planner.fileops import _build_append, _match_append, _undo_append, _verify_append
-from jarvis.planner.models import CheckSpec, PlannedStep, UndoPlan, UndoStatus, Verification
+from jarvis.planner.inspect_cmds import INSPECT_PLAYBOOKS
+from jarvis.planner.models import (
+    CheckSpec,
+    PlannedStep,
+    Playbook,
+    UndoPlan,
+    UndoStatus,
+    Verification,
+)
+from jarvis.planner.proc_cmds import PROC_PLAYBOOKS
 from jarvis.safety.tiers import (
     SafetyRefusal,
     Tier,
@@ -55,35 +63,6 @@ _MATCH_SVC_ENABLE = re.compile(
     r"^enable\s+(?:the\s+)?(?P<unit>[A-Za-z0-9][\w:@.-]*)(?:\s+(?:service|unit))?$"
 )
 _MATCH_SYSINFO = re.compile(r"^(?:system|machine)\s+(?:info|summary|status)$")
-
-
-class _Build(Protocol):
-    def __call__(self, params: Params, profile: MachineProfile) -> list[PlannedStep]: ...
-
-
-class _Verify(Protocol):
-    def __call__(
-        self,
-        params: Params,
-        profile: MachineProfile,
-        runner: Runner,
-        step_results: Sequence[ExecResult | None] | None,
-    ) -> Verification: ...
-
-
-class _Undo(Protocol):
-    def __call__(self, params: Params, profile: MachineProfile) -> UndoPlan: ...
-
-
-@dataclass(frozen=True)
-class Playbook:
-    id: str
-    description: str
-    tier: Tier
-    match: Callable[[str], Params | None]
-    build: _Build
-    verify: _Verify
-    undo: _Undo
 
 
 # --------------------------------------------------------------------------
@@ -744,7 +723,7 @@ def _undo_gui_launch(params: Params, profile: MachineProfile) -> UndoPlan:
     return _no_undo("a launched app cannot be reverted by the kernel; close it manually")
 
 
-PLAYBOOKS: tuple[Playbook, ...] = (
+_CORE_PLAYBOOKS: tuple[Playbook, ...] = (
     Playbook(
         id="pkg.upgrade",
         description="upgrade all installed packages (T2, approval-gated)",
@@ -858,6 +837,15 @@ PLAYBOOKS: tuple[Playbook, ...] = (
 )
 
 
+# ADR-0016: the catalog is families first, core last. Order IS safety policy:
+# e.g. fs.remove's path-shaped guard must see "remove /tmp/x" before
+# pkg.remove claims every "remove ..." request, while bare package names fall
+# through the guarded matchers to the core families.
+PLAYBOOKS: tuple[Playbook, ...] = (
+    INSPECT_PLAYBOOKS + FILE_PLAYBOOKS + PROC_PLAYBOOKS + _CORE_PLAYBOOKS
+)
+
+
 def nearest_intents(text: str, limit: int = 3) -> list[str]:
     """Lexically nearest playbook intents for unknown-request disclosure (ADR-0014 D6).
 
@@ -892,7 +880,7 @@ def match_intent(text: str) -> tuple[Playbook, Params] | None:
     collapsed = re.sub(r"\s+", " ", text.strip())
     normalized = collapsed.lower()
     for playbook in PLAYBOOKS:
-        source = collapsed if playbook.id.startswith(("file.", "gui.")) else normalized
+        source = collapsed if playbook.id.startswith(("file.", "gui.", "fs.")) else normalized
         params = playbook.match(source)
         if params is not None:
             return playbook, params
