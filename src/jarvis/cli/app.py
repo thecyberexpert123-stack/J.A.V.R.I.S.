@@ -1371,6 +1371,53 @@ def _cmd_serve_status(args: argparse.Namespace) -> int:
     return status(Path.home())
 
 
+def _cmd_voice(args: argparse.Namespace) -> int:
+    """Voice front-end (ADR-0019): doctor / say / ask — kernel parity, T2 typed-consent only."""
+    from jarvis.voice.detect import detect
+    from jarvis.voice.pipeline import VoicePipeline, _clean_text
+
+    caps = detect()
+    pipeline = VoicePipeline(caps)
+
+    if args.voice_command in (None, "doctor"):
+        import json
+
+        print(json.dumps(caps.to_json_dict(), indent=2))
+        missing = caps.missing_for_full_loop()
+        if missing:
+            print("missing for full spoken loop:")
+            for item in missing:
+                print(f"  - {item}")
+        else:
+            print("full spoken round-trip available")
+        print(
+            "consent: T0/T1 proceed as on a non-tty CLI; T2 is NOT voice-consentable "
+            "(type it with --yes); hands-free wake word is parked (ADR-0019 D3)."
+        )
+        return 0
+
+    if args.voice_command == "say":
+        text = _clean_text(" ".join(args.text), "text")
+        spoken = pipeline.speak(text)
+        print(text if not spoken else f"[spoken] {text}")
+        return 0
+
+    # ask
+    wav_arg = getattr(args, "wav", None)
+    if wav_arg:
+        wav = Path(wav_arg).expanduser()
+        if not wav.is_file():
+            print(f"error: no such wav file: {wav}", file=sys.stderr)
+            return 2
+    else:
+        wav = pipeline.record(args.seconds)
+    heard = pipeline.transcribe(wav)
+    print(f"heard: {heard}")
+    summary, _outcome, spoken = pipeline.ask(heard)
+    print(summary if not spoken else f"[spoken] {summary}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1653,6 +1700,33 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="report the truth of each residency piece"
     )
     p_serve_status.set_defaults(func=_cmd_serve_status)
+
+    p_voice = sub.add_parser(
+        "voice",
+        help="voice front-end (ADR-0019): doctor / say / ask — same kernel, same consent tiers",
+        description=(
+            "Push-to-talk voice: record -> transcribe -> the SAME safety kernel -> speak. "
+            "External binaries only (whisper-class STT, piper TTS; arecord recorder); "
+            "no new Python dependencies. T2 is not voice-consentable: type such requests "
+            "with --yes. 'doctor' reports honestly what this machine can do."
+        ),
+    )
+    p_voice_sub = p_voice.add_subparsers(dest="voice_command")
+    p_voice.set_defaults(func=_cmd_voice, voice_command=None)  # bare = doctor
+    p_voice_sub.add_parser("doctor", help="report voice capability truthfully").set_defaults(
+        func=_cmd_voice, voice_command="doctor"
+    )
+    p_voice_say = p_voice_sub.add_parser("say", help="speak a short text (<=500 chars)")
+    p_voice_say.add_argument("text", nargs="+")
+    p_voice_say.set_defaults(func=_cmd_voice, voice_command="say")
+    p_voice_ask = p_voice_sub.add_parser(
+        "ask", help="record (or --wav), transcribe, run through the kernel, speak the outcome"
+    )
+    p_voice_ask.add_argument("--wav", help="transcribe this file instead of recording")
+    p_voice_ask.add_argument(
+        "--seconds", type=int, default=5, help="record duration, 1..15 (default 5)"
+    )
+    p_voice_ask.set_defaults(func=_cmd_voice, voice_command="ask")
 
     p_doctor = sub.add_parser(
         "doctor",

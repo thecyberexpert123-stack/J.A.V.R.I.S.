@@ -49,6 +49,39 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.13.0] - 2026-09-04 — voice front-end: push-to-talk into the same kernel (owner-directed roadmap R1, ADR-0019)
+
+"Continue the Major Milestone" — roadmap R1 from the deep research. Voice is **presentation,
+never authority**: the transcribed request enters the same match → plan → approve → execute →
+verify path as typed text, with the same journal, tiers, and refusals.
+
+### Added
+- **`jarvis voice doctor`** — honest capability detection (mirrors `gui/detect.py`): probed
+  recorder (`arecord`/`pw-record`), STT (`whisper-cli`/`whisper.cpp`/`whisper` + `$JARVIS_STT_MODEL`),
+  TTS (`piper` + `$JARVIS_TTS_MODEL`), player (`paplay`/`aplay`/`ffplay`); missing pieces are
+  reported as a plain-language list, never a silent degrade. A headless box is a normal state.
+- **`jarvis voice ask [--seconds N] [--wav FILE]`** — record → transcribe → kernel → terse
+  summary; **`jarvis voice say "<text>"`** — speak a short text. All audio work is delegated to
+  standard external binaries via **fixed argv** (recorder flags frozen, model paths validated as
+  single argv tokens, piper's text piped through the Runner's `stdin_text`) — no shell, **zero
+  new Python dependencies** (ADR-0005 honored), audio files live in the state dir and are
+  overwritten per turn (nothing retained).
+- **Consent parity (D3):** voice requests run under the non-consenting policy — T0/T1 proceed as
+  on a non-tty CLI; **T2 is not voice-consentable** (speech misrecognition must never
+  manufacture consent): the spoken refusal points to typed `--yes`; T3 refused as always.
+  Hands-free wake-word listening is parked (an in-process engine would need an ADR-0005
+  exception; owner-gated).
+- Docs: ADR-0019; README voice section. Research basis: `docs/RESEARCH-jarvis-agent-linux-2026.md`
+  §3.6 (local voice stack) and R1.
+
+### Tests
+- +20 (`tests/test_voice.py`): stub binaries on a fake PATH exercise the whole round trip
+  without audio hardware — detection honesty (headless + missing-model cases), exact argv
+  templates, stdin-piped TTS text, text hygiene refusals, pw-record's honest "no timed mode",
+  kernel parity through voice (T0 succeeded end-to-end incl. spoken summary; unmatched →
+  refused; T2 refused with typed-consent hint, nothing executed; never-list stays unmatchable),
+  and the CLI surface. Suite: **690 passed + 2 honest skips** (692 collected). ruff + mypy clean.
+
 ## [1.12.0] - 2026-09-04 — hybrid residency: opt-in resident doorway, agent stays on-demand (owner-directed, ADR-0018)
 
 Owner directive: "Combine both, and make a Hybrid, option" — the systemd user-unit doorway and

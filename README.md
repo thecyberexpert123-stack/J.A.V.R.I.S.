@@ -6,14 +6,14 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.12.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
-residency (ADR-0018)**: deterministic engine + LLM planner with failure semantics + a
-proposals-only neural intent classifier + safety kernel + cited knowledge + MCP surface +
-verified skill packs + charters + integrity doctor + GUI control + **56 deterministic playbooks**
-across guarded families + an opt-in loopback doorway for resident front-ends, packaged
-(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
-`v1.0.0-rc1` … `v1.12.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
-See `INSTALL.md`.**
+**Status: `v1.13.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+residency (ADR-0018) + voice front-end (ADR-0019)**: deterministic engine + LLM planner with
+failure semantics + a proposals-only neural intent classifier + safety kernel + cited knowledge +
+MCP surface + verified skill packs + charters + integrity doctor + GUI control + **56
+deterministic playbooks** + an opt-in loopback doorway + push-to-talk voice into the same
+kernel, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review
+candidates `v1.0.0-rc1` … `v1.13.0-rc1` await the owner's release decisions. Reports:
+`evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -118,6 +118,23 @@ Some things are **deliberately absent** and documented as such in ADR-0016: `dd`
 partition editors, `shutdown`/`reboot`, downloads-and-pipes (`curl | sh`), stream editing
 (`sed -i`), and permission changes (`chmod`/`chown`) have no playbook at all — they are
 unmatchable by design, and tests prove it. `jarvis playbooks` shows the full catalog with tiers.
+
+## Voice (ADR-0019)
+
+Push-to-talk, same kernel, zero new dependencies:
+
+```bash
+jarvis voice doctor          # what can this machine do right now (honest)
+jarvis voice ask             # record (arecord) -> whisper STT -> the safety kernel -> piper TTS
+jarvis voice ask --wav x.wav # transcribe a file instead of recording
+jarvis voice say "all done"  # speak a short text
+```
+
+Voice is **presentation, never authority**: a spoken request follows the identical
+match → plan → approve → execute → verify path; **T2 is not voice-consentable** — the spoken
+refusal tells you to type it with `--yes`. Requires standard binaries (`whisper-cli`-class STT
+with `$JARVIS_STT_MODEL`, `piper` with `$JARVIS_TTS_MODEL`, `arecord`, a player); `doctor`
+reports exactly what is missing. Hands-free wake word is parked by design (ADR-0019 D3).
 
 ## Hybrid residency (ADR-0018)
 
