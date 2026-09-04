@@ -6,14 +6,15 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.14.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
-residency (ADR-0018) + voice front-end (ADR-0019) + owner-taught memory (ADR-0020)**:
-deterministic engine + LLM planner with failure semantics + a proposals-only neural intent
-classifier + safety kernel + cited knowledge + MCP surface + verified skill packs + charters +
-integrity doctor + GUI control + **56 deterministic playbooks** + an opt-in loopback doorway +
-push-to-talk voice + plain-file persistent memory, packaged (wheel/deb/rpm/AUR) and
-install-verified on all Tier-1 distros in CI. Review candidates `v1.0.0-rc1` … `v1.14.0-rc1`
-await the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
+**Status: `v1.15.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
+residency (ADR-0018) + voice (ADR-0019) + owner-taught memory (ADR-0020) + scheduled briefings
+(ADR-0021)**: deterministic engine + LLM planner with failure semantics + a proposals-only
+neural intent classifier + safety kernel + cited knowledge + MCP surface + verified skill packs +
+charters + integrity doctor + GUI control + **56 deterministic playbooks** + an opt-in loopback
+doorway + push-to-talk voice + plain-file memory + propose-only scheduled briefings, packaged
+(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
+`v1.0.0-rc1` … `v1.15.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
+See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -151,6 +152,24 @@ never stored); the LLM planner sees the newest ≤10 entries as a delimited *bac
 block in its system prompt — never as instructions, never a bypass: every proposed step still
 re-validates through the real playbooks. No database, no embeddings; one file per memory under
 the state dir. Agent-initiated capture is parked (ADR-0020 D2).
+
+## Scheduled briefings (ADR-0021)
+
+Level-2 proactivity, propose-only — the agent may knock, never act on its own:
+
+```bash
+jarvis brief                  # compose + decide + deliver (prints "nothing to report" or the briefing)
+jarvis brief status           # runs, notified, silenced, silence rate, feedback counts
+jarvis brief accept|dismiss <id>   # feedback recorded (policy learning parked)
+jarvis brief install [--on daily|weekly]   # opt-in systemd --user timer
+jarvis brief uninstall
+```
+
+Briefings are **computed from local state only** (journal failures, evidence-backed
+suggestions, unmapped requests, disk pressure via `statvfs` — zero subprocesses) and never
+execute commands. The v1 policy is deterministic and inspectable; silence is a first-class,
+ledgered outcome with a reason. `--quiet` (timer mode) delivers via `briefings/latest.md` and
+an optional desktop notification.
 
 ## Hybrid residency (ADR-0018)
 

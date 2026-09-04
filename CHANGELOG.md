@@ -49,6 +49,45 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.15.0] - 2026-09-04 — scheduled briefings: Level-2 proactivity, propose-only (roadmap R3, ADR-0021)
+
+"Continue" — roadmap R3 from the deep research. The agent gains a polite, bounded presence: a
+computed briefing with a deterministic notify-or-silence policy. **Briefings are computed, never
+executed** — the charter line "no unsolicited action" now has a scheduled surface that respects it.
+
+### Added
+- **`src/jarvis/brief/engine.py`** — composes from four local, zero-subprocess sources: the task
+  journal (recent failures), the existing evidence-backed suggestions engine, unknown requests
+  (the owner's growth queue), and disk pressure via `os.statvfs` (stdlib stat, not a `df`
+  subprocess). **No playbook added; the catalog stays 56.** A test asserts composition spawns
+  no processes.
+- **Deterministic v1 policy (D2):** notify iff failures ≥1 (7-day window) OR suggestions ≥1 OR
+  free disk % < 15; otherwise **silence with a recorded reason**. Every run appends to
+  `<state>/briefings/ledger.jsonl`; `jarvis brief status` reports runs/notified/silenced and
+  the **silence rate** — the denominator-aware transparency the 2026 proactivity literature
+  calls for.
+- **Delivery is presentation (D3):** notify writes `briefings/latest.md` plus one hygiened
+  `notify-send` line when that binary exists (fixed argv, ≤200 chars, control-char stripped,
+  honestly "unavailable" otherwise). `--quiet` (timer mode) prints nothing.
+- **Feedback recorded, not acted on (D4):** `jarvis brief accept|dismiss <id>` appends to the
+  ledger; policy learning from feedback (Level 3) is parked, owner-gated.
+- **Opt-in timer (D5):** `jarvis brief install [--on daily|weekly]` writes a systemd **user**
+  timer + service (`jarvis-brief.timer` → `jarvis brief --quiet`), enables via `systemctl
+  --user` when available (else disclosed skip with the manual command); `uninstall` reverses;
+  packaging never enables it. The ADR-0018 doorway stays "a doorway, never an actor" — the
+  timer composes text, which is not action.
+- Docs: ADR-0021; README proactivity section. Command-based checks (e.g., pending-updates
+  simulation) stay parked — they would be the first scheduled subprocesses and deserve their
+  own ADR.
+
+### Tests
+- +18 (`tests/test_brief.py`): composition from seeded journal/context with monkeypatched
+  statvfs; the no-subprocess guard (composition asserts `subprocess.run` is never called);
+  the full policy table; notify-line hygiene; ledger runs/feedback/stats with the silence
+  denominator; run_once delivery + quiet mode + json; timer content/install/uninstall
+  round-trip with honest non-systemd disclosure; CLI bare-run/status; and the catalog-stays-56
+  charter check. Suite: **731 passed + 2 honest skips** (733 collected). ruff + mypy clean.
+
 ## [1.14.0] - 2026-09-04 — owner-taught file memory: provenance, injection-scanned, read-only to the model (roadmap R2, ADR-0020)
 
 "Continue with the Others" — roadmap R2 from the deep research. The first persistent-

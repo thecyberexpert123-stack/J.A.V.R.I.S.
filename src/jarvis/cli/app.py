@@ -1467,6 +1467,45 @@ def _cmd_memory(args: argparse.Namespace) -> int:
         return 2
 
 
+def _cmd_brief(args: argparse.Namespace) -> int:
+    """Scheduled briefings (ADR-0021): run / status / accept / dismiss / install / uninstall."""
+    import json as _json
+
+    from jarvis.brief.engine import BriefLedger, run_once
+    from jarvis.safety.tiers import SafetyRefusal
+
+    action = getattr(args, "brief_command", None)
+    ledger = BriefLedger()
+    try:
+        if action in (None, "run"):
+            payload = run_once(
+                quiet=bool(getattr(args, "quiet", False)),
+                json_output=bool(getattr(args, "json", False)),
+            )
+            if args.json:
+                print(_json.dumps(payload, indent=2))
+            return 0
+        if action == "status":
+            print(_json.dumps(ledger.stats(), indent=2))
+            return 0
+        if action in ("accept", "dismiss"):
+            ledger.record_feedback(args.briefing_id, action)
+            print(f"{action}ed {args.briefing_id} (recorded; policy learning is parked)")
+            return 0
+        if action == "install":
+            from jarvis.brief.install import install_timer
+
+            return install_timer(args.on, Path.home())
+        if action == "uninstall":
+            from jarvis.brief.install import uninstall_timer
+
+            return uninstall_timer(Path.home())
+    except SafetyRefusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1801,6 +1840,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_mem_show = p_memory_sub.add_parser("show", help="show one memory with provenance")
     p_mem_show.add_argument("entry_id")
     p_mem_show.set_defaults(func=_cmd_memory, memory_command="show")
+
+    p_brief = sub.add_parser(
+        "brief",
+        help="scheduled propose-only briefings (ADR-0021): run / status / feedback / install",
+        description=(
+            "Level-2 proactivity: a daily computed briefing (failures, suggestions, "
+            "unmapped requests, disk pressure) with a deterministic notify-or-silence "
+            "policy. Briefings never execute anything; every decision is ledgered; "
+            "silence is reported. The timer is opt-in: 'brief install'."
+        ),
+    )
+    p_brief_sub = p_brief.add_subparsers(dest="brief_command")
+    p_brief.set_defaults(func=_cmd_brief, brief_command=None)  # bare = run
+    p_brief_run = p_brief_sub.add_parser("run", help="compose + decide + deliver + ledger")
+    p_brief_run.add_argument("--quiet", action="store_true", help="print only when notifying")
+    p_brief_run.set_defaults(func=_cmd_brief, brief_command="run")
+    p_brief_sub.add_parser("status", help="runs, silence rate, feedback counts").set_defaults(
+        func=_cmd_brief, brief_command="status"
+    )
+    p_brief_acc = p_brief_sub.add_parser("accept", help="record acceptance of a briefing id")
+    p_brief_acc.add_argument("briefing_id")
+    p_brief_acc.set_defaults(func=_cmd_brief, brief_command="accept")
+    p_brief_dis = p_brief_sub.add_parser("dismiss", help="record dismissal of a briefing id")
+    p_brief_dis.add_argument("briefing_id")
+    p_brief_dis.set_defaults(func=_cmd_brief, brief_command="dismiss")
+    p_brief_ins = p_brief_sub.add_parser(
+        "install", help="write + enable a systemd --user timer (opt-in)"
+    )
+    p_brief_ins.add_argument("--on", choices=("daily", "weekly"), default="daily")
+    p_brief_ins.set_defaults(func=_cmd_brief, brief_command="install")
+    p_brief_sub.add_parser("uninstall", help="remove the timer; back to on-demand").set_defaults(
+        func=_cmd_brief, brief_command="uninstall"
+    )
 
     p_doctor = sub.add_parser(
         "doctor",
