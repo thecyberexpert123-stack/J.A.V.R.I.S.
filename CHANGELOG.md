@@ -29,6 +29,16 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.10.1] - 2026-09-04 — GUI coordination pass: contract re-verified against kernel 1.10.0 and GUI @ `d5233d5` (owner-directed)
+
+### Added
+- **Coordination log** in `docs/integration/JAVRIS-GUI.md` §8: the `javris-frontend/1` wire is unchanged from v1.8.0 through v1.10.0 (M10/M11 changed what the kernel says in failure/unknown situations, not the protocol); conformance re-verified — 7 contract tests green, plus a subprocess-level replay of the contract's example frames through the shipped `jarvis mcp serve` binary (protocolVersion echo, `serverInfo` 1.10.0, deterministic explain, honest T2 refusal, protocol-free stderr). GUI-side re-inspection: `state.py` transition table and `router.py` verbs are unchanged at the GUI branch head, so every §4 mapping and §5 verb remains exact; the branch's new attention-escalation/orb/motion work is rendering-side and orthogonal.
+- **Front-end rendering guidance** (§8): degraded AI is telemetry, not an error (attention-escalation is the natural home); unknown-request suggestions may render as pre-filled console text (user still disposes — consent model untouched); `JARVIS_NO_AI=1` gives an air-gapped mode with the state machine unaffected. A structured suggestion field on the wire is explicitly recorded as a proposed, owner-gated `javris-frontend/1.1` revision — deliberately not implemented.
+- **Identity-parity conformance test**: the live handshake's `serverInfo.version` is pinned to the kernel package version (front-ends read it for capability detection; drift there would silently break their logic). Tests: +1 → **576 passed + 2 honest skips** (578 collected).
+
+### Changed
+- No kernel behavior changes; no wire changes (`javris-frontend/1` stable). Docs and conformance evidence only.
+
 ## [1.10.0] - 2026-09-04 — M11: learned intent recall — a purpose-built proposals-only neural classifier (ADR-0015, owner-directed)
 
 ### Added

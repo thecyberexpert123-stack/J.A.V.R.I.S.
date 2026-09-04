@@ -9,6 +9,7 @@ end built against the descriptor works against the server, by construction.
 from __future__ import annotations
 
 import json
+from io import StringIO
 from typing import Any
 
 from jarvis.cli.mcp_server import (
@@ -102,6 +103,17 @@ def test_handshake_in_contract_reproduces_the_real_handshake(
     frames = [json.loads(line) for line in out.getvalue().splitlines()]
     assert frames[0]["result"]["serverInfo"]["name"] == "jarvis"  # version handshake point
     assert "notifications/initialized" in example_lines[1]
+
+
+def test_server_identity_tracks_the_package_version() -> None:
+    """Front-ends read serverInfo.version for capability detection (§8 of the
+    wiring doc); it must never drift from the installed kernel version."""
+    from jarvis import __version__ as kernel_version
+
+    out = StringIO()
+    MCPServer(StringIO(json.dumps(INIT) + "\n"), out).serve()  # type: ignore[arg-type]
+    frame = json.loads(out.getvalue().splitlines()[0])
+    assert frame["result"]["serverInfo"]["version"] == kernel_version
 
 
 def test_consent_flow_from_the_contract_end_to_end(monkeypatch: Any, tmp_path: Any) -> None:

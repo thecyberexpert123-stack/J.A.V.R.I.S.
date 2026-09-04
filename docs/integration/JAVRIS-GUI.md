@@ -84,3 +84,45 @@ implements its own client/server code. This repository's license is
 copied across repos in either direction until the owner sets the license. The
 protocol is fully specified by `jarvis mcp describe`; a QProcess-based client for the
 GUI is small (framing + JSON parse + signal wiring).
+
+## 8. Coordination log — re-verified against kernel 1.10.0 and GUI @ `d5233d5` (2026-09-04)
+
+**Wire stability: `javris-frontend/1` is unchanged from v1.8.0 through v1.10.0.**
+The kernel's M10 (AI failure semantics) and M11 (learned intent recall) releases
+changed what the kernel *says* in failure and unknown situations — not the wire.
+Conformance tests (`tests/test_frontend_contract.py`, 6) green at kernel 1.10.0; a
+subprocess-level replay of the contract's example frames through the shipped
+`jarvis mcp serve` binary verified: protocolVersion echo, `serverInfo.version =
+1.10.0`, deterministic `jarvis_explain`, honest T2 refusal without `allow:true`,
+and protocol-free stderr. On the GUI side (branch `arena/01a0667a-j-a-v-r-i-s-gui`
+@ `d5233d5`): `state.py` transition table and `commands/router.py` verbs/limits
+are unchanged since `3e908e6`, so every mapping in §4 and every verb in §5
+remains exact. The branch's new work (attention escalation, ASSISTANT orb/takeover,
+motion language, battery/host telemetry, `--no-ambient`) is rendering-side and
+orthogonal to this contract.
+
+**What M10/M11 let a front-end render better (all optional, nothing new to parse):**
+
+- *Degraded AI is telemetry, not an error.* A failing model trips a kernel-side
+  circuit breaker and is disclosed via `jarvis_status`-style reporting — the
+  GUI's `PROCESSING`/`ERROR` mapping is unchanged; `ERROR` stays reserved for
+  protocol faults and refusals. Recommended: surface "AI degraded — engine
+  fully operational" through the attention-escalation system (a sustained
+  degraded condition is exactly what it exists to promote), never as a crash.
+- *Unknown requests carry suggestions.* The kernel now answers an unmappable
+  request with `unknown-request:`-prefixed refusal text that may include an
+  engine-legal suggestion ("it looks like: `jarvis do install htop` — type that
+  yourself to run it"). A GUI console can render that as a pre-filled input or
+  suggestion chip: the user still presses enter, so the consent model of §3 is
+  untouched (the suggestion is text, the user disposes). A structured
+  suggestion field on the wire would be a `javris-frontend/1.1` additive
+  revision — proposed, owner-gated, deliberately NOT done now.
+- *No-AI mode.* Launching the server with `JARVIS_NO_AI=1` (or the operator's
+  global `--no-ai`) gives an air-gapped mode: engine, cited KB answers, journal
+  only. The state machine is unaffected; `jarvis_explain` stays deterministic
+  (fast) either way, so §4 latency expectations hold.
+
+**Kernel-side steps: none required by the GUI beyond v1.8.0's plan** — spawn
+`jarvis mcp serve`, speak §2, render §3–§5. The GUI's QProcess client (§1) is
+implementable today against this descriptor; the contract tests on the kernel
+side and the GUI's own `tools/check.sh` are the two gates.
