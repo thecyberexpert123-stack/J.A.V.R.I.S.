@@ -33,6 +33,10 @@
   artifacts; the agent then edits title/notes (`gh release edit --draft
   --prerelease --notes-file …`) with a "pending owner review" disclaimer.
   Publishing the draft is owner-only and `--draft` cannot publish by accident.
+- **Docs-only changes ship WITHOUT a tag or release** (standing precedent): the rc-tag +
+  draft-release pattern is for code milestones only.
+- The review queue stands at **22 drafts** (`v1.0.0-rc1` … `v1.18.0-rc1`; each draft +
+  prerelease, 3 assets, unpublished). Publishing is owner-reserved and one at a time.
 - `gh workflow run` (dispatch) may be unavailable to automation tokens
   (HTTP 403, no `actions:write`) — git push and `gh release edit` still work;
   plan around dispatch, not with it.

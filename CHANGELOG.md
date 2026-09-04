@@ -32,6 +32,14 @@ below each entry were corrected in place.
 ## [Unreleased]
 
 ### Added
+- **Documentation sweep** (owner-directed, docs-only — ships without a tag per the docs-only
+  convention): README repaired (a pre-existing mid-sentence paragraph split around the
+  cite-or-abstain/GUI text; the stale "Planning phase (M0)" closer replaced with the real
+  status; the F6 digest paragraph that had silently failed to land in 1.18.0 is actually
+  present now); `AGENT-EXPERIENCE.md` brought current through v1.18.0; `docs/PLAN.md` amended
+  with dated annotations only (voice/classifier scope amendments; the R-series milestone row);
+  `docs/RELEASING.md` records the docs-only-no-tag convention and the 22-draft review queue.
+  No code changes.
 - **Deep research** (`docs/RESEARCH-jarvis-agent-linux-2026.md`, owner-directed): how to build a
   JARVIS-class agent for Linux. Decomposes the MCU target into 12 film-evidenced capabilities,
   surveys the 2026 state of the art per subsystem (memory; planning/tool use; Linux computer use

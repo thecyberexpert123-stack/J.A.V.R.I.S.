@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Status** | `ACCEPTED — baseline` (owner delegated remaining decisions to engineer-of-record, 2026-09-02; resolutions in §13, ADR-0001…0004) |
+| **Status** | `ACCEPTED — baseline` (owner delegated remaining decisions to engineer-of-record, 2026-09-02; resolutions in §13, ADR-0001…0004; maintained through ADR-0024, 2026-09-04 — later amendments are dated annotations, history preserved) |
 | **Date** | 2026-09-02 |
 | **Governance** | Single source of truth for scope & architecture. Binding charter: `docs/GOVERNANCE.md`. **The owner merge policy is absolute: the agent never merges anything.** All work lives on the session branch. |
-| **Evidence base** | `docs/RESEARCH.md` (all decisions trace to research items R1–R5) |
+| **Evidence base** | `docs/RESEARCH.md` (all decisions trace to research items R1–R5); 2026 deep-research corpus: `docs/RESEARCH-jarvis-agent-linux-2026.md` (45 sources; produced the landed R1–R5 roadmap) |
 
 ---
 
@@ -27,7 +27,12 @@ without the user having to script anything. It is not a chatbot with shell acces
 6. Full audit trail: every action journaled with plan, approval, result, and undo path.
 
 **Out of scope (explicitly, for v1.x)**
-- Multi-machine/fleet orchestration; Windows/macOS; voice I/O; home-automation integrations; unattended full-autonomy mode on system-level changes; training/fine-tuning models.
+- Multi-machine/fleet orchestration; Windows/macOS; home-automation integrations; unattended full-autonomy mode on system-level changes.
+- *Dated scope amendments (2026-09-04, owner-directed roadmap):* **voice I/O** entered scope as
+  a push-to-talk front-end through the same kernel (ADR-0019, v1.13.0; ambient wake-word stays
+  parked per the ADR-0005 exception), and a **purpose-built tiny intent classifier with an
+  in-repo gated trainer** entered scope (ADR-0015/0023, v1.10.0/v1.17.0) — general model
+  training/fine-tuning remains out of scope.
 
 **Anti-goals** (what this project will never do)
 - Blindly execute model output; pipe anything into a privileged shell unread (RESEARCH R2); claim success without post-condition verification; ship placeholder/unfinished modules (owner guideline #1).
@@ -232,6 +237,8 @@ J.A.V.R.I.S./
 | **Front-end contract** (owner-directed 2026-09-03) — **SHIPPED in 1.8.0**: `jarvis mcp describe` publishes `javris-frontend/1` (transport, tools + consent semantics, state mapping onto J.A.V.R.I.S.-GUI's AssistantState); conformance-tested against the live server; `docs/integration/JAVRIS-GUI.md` is the wiring document. The GUI's QProcess client lives in the GUI repo against this contract | M9a MCP server (stdlib JSON-RPC/stdio; kernel tools only) · M9c memory/config integrity (drift baseline, `doctor`, write-time scanning) · M9b verified skill packs (declarative, eval-gated, provenance — never runtime-LLM-read) · M9d charters (circuit-broken standing orders) · M9e API-first GUI actions | Design accepted into PLAN; acceptance per phase defined in ADR-0013; invariant: new capability enters through the kernel or not at all |
 | **M10** AI failure semantics (ADR-0014, owner-directed 2026-09-04) — **SHIPPED in 1.9.0**: what the agent does when the AI fails, how unknown situations are processed, how it runs with no AI at all, and a proper (validated, breaker-tracked, grounded) AI integration | Persisted per-provider circuit breaker (closed/open/half-open, `.state` outside integrity scope); typed failure taxonomy in outcomes + `status`; schema-constrained planner wire + unchanged strict validation; grounded AI answers on KB misses (cite-only-from-evidence, structural abstention); unknown requests → nearest intents + journal record + teaching hint; `--no-ai`/`JARVIS_NO_AI=1` operator kill switch; `doctor` AI state informational-only | Research: `docs/RESEARCH-ai-resilience-2026.md`; acceptance: AI-less suite green end to end; breaker prevents retry storms across processes; model still never executes, consents, or widens authority (kernel remains the only door) |
 | **M11** Learned intent recall (ADR-0015, owner-directed 2026-09-04) — **SHIPPED in 1.10.0**: a purpose-built neural classifier (proposals-only recall widener after engine-miss + planner-decline; never a fallback executor) | Tiny MLP (256-dim hashed n-grams → 48 ReLU → softmax over 12 playbook families + `unknown`); ~13K params as package data; stdlib inference; seeded gated trainer in-repo (gates on rounded shipped weights); suggestion = extractor + real-matcher-revalidated text the user types; `--no-ai` honored; MCP untouched | Research: `docs/RESEARCH-tiny-intent-models-2026.md`; acceptance: hand-written eval sets independent of the training generator (top-1 ≥ 0.9, top-3 = 1.0, OOD abstain ≥ 0.85), every suggestion engine-legal, AI-less suite green; limitations documented (synthetic corpus distribution, English-only) |
+
+| **R-series** (2026 deep research → owner-directed "continue" sequence) — **COMPLETE v1.12.0–v1.18.0**: hybrid residency (ADR-0018, 1.12.0) · voice front-end (ADR-0019, 1.13.0) · owner-taught file memory (ADR-0020, 1.14.0) · scheduled propose-only briefings (ADR-0021, 1.15.0) · guarded desktop awareness, read-only AT-SPI tier (ADR-0022, 1.16.0) · full-vocabulary intent retrain (ADR-0023, 1.17.0) · synthesis-over-sources digest `sys.digest` (ADR-0024, 1.18.0) | Catalog 12 → 57 playbooks; suite 794 passed + 2 honest skips; 22 draft releases queued for owner review | Research: `docs/RESEARCH-jarvis-agent-linux-2026.md`; acceptance per ADR-0018…0024; guideline-compliance table in each milestone report; **nothing merged, `main` untouched** |
 
 ---
 

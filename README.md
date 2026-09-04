@@ -23,6 +23,7 @@ Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/
 |---|---|
 | Plan & architecture | [`docs/PLAN.md`](docs/PLAN.md) |
 | Research & evidence | [`docs/RESEARCH.md`](docs/RESEARCH.md) |
+| 2026 deep research & roadmap | [`docs/RESEARCH-jarvis-agent-linux-2026.md`](docs/RESEARCH-jarvis-agent-linux-2026.md) |
 | Change log | [`CHANGELOG.md`](CHANGELOG.md) |
 | Development experience log | [`AGENT-EXPERIENCE.md`](AGENT-EXPERIENCE.md) |
 
@@ -57,24 +58,24 @@ jarvis safety-check                # prove the guards are alive on THIS machine
 jarvis do --preview "upgrade the system"   # plan + blast radius, nothing runs
 jarvis cautious on                 # early-days guard for a fresh machine
 jarvis suggest                     # evidence-backed suggestions (read-only; nothing runs)
+jarvis system digest              # cited, computed health digest (no LLM; ADR-0024)
 ```
 
 > **Before a machine you care about:** read [`docs/SAFE-TESTING.md`](docs/SAFE-TESTING.md) —
 > the honest risk map and a 4-rung ladder for building trust.
 
-Knowledge answers are **cite-or-abstain**
+Knowledge answers are **cite-or-abstain**: every answer names its sources
+(kernel docs in [`torvalds/linux`](https://github.com/torvalds/linux), man pages,
+distro docs) and whether the fact was verified *on this machine*; anything
+outside the knowledge base is refused, never guessed (ADR-0009). With
+`JARVIS_ONLINE_DOCS=1`, JARVIS additionally verifies its kernel-doc citations
+against `torvalds/linux` master on demand (CI does this on every push).
 
 GUI control is a **capability matrix**, not a promise: `jarvis gui status` reports
 exactly what this desktop supports (X11 · i3/sway · Hyprland · KDE · GNOME; AT-SPI
 when present). Keystroke injection always shows you the focused window it will type
 into and asks for consent — and typed text is never written to the journal.
 `jarvis gui wizard` checks ydotool readiness on Wayland with distro-specific fixes.
-: every answer names its sources
-(kernel docs in [`torvalds/linux`](https://github.com/torvalds/linux), man pages,
-distro docs) and whether the fact was verified *on this machine*; anything
-outside the knowledge base is refused, never guessed (ADR-0009). With
-`JARVIS_ONLINE_DOCS=1`, JARVIS additionally verifies its kernel-doc citations
-against `torvalds/linux` master on demand (CI does this on every push).
 
 Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
 `JARVIS_LOCAL_MODEL`); an **OpenAI-compatible** endpoint is opt-in
@@ -115,7 +116,7 @@ intent unmatchable, never a sanitize; shell metacharacters are banned outright).
 
 - **Read-only inspection (T0):** `fs.list/read/head/tail/count/stat/file_type/which/disk_usage/find/search/disk_free`,
   `sys.memory/processes/uptime/date/hostname/cpus/pci/usb/blocks/sockets/network/routes/journal/kernel_log/users/login_history/env/identity/checksum`,
-  `net.ping` (bounded: 4 packets, 4 s), `net.dns`.
+  `net.ping` (bounded: 4 packets, 4 s), `net.dns`, plus the synthesis playbook `sys.digest` (below).
 - **File management (T1, root-gated where policy demands):** `fs.mkdir/touch/copy/move/remove/link`
   — protected paths refused, undo planned before execution, deletion disclosed as irreversible.
 - **Process & service control (T2):** `svc.stop/restart/disable` (systemd-gated),
@@ -125,6 +126,11 @@ Some things are **deliberately absent** and documented as such in ADR-0016: `dd`
 partition editors, `shutdown`/`reboot`, downloads-and-pipes (`curl | sh`), stream editing
 (`sed -i`), and permission changes (`chmod`/`chown`) have no playbook at all — they are
 unmatchable by design, and tests prove it. `jarvis playbooks` shows the full catalog with tiers.
+
+Outside those families sits one deliberate addition, `sys.digest` (ADR-0024):
+`system digest` / `health check` / `analyze my system` runs three existing read-only sources
+(`df -h`, `free -h`, `uptime`) and **computes** a cited health digest with disclosed
+thresholds — no LLM in the path, and an unreadable source is disclosed, never guessed.
 
 ## Voice (ADR-0019)
 
@@ -302,5 +308,11 @@ A front-end is another untrusted-ingress surface: it renders, it never widens au
 
 ## Status of this repository
 
-Planning phase (M0). Implementation begins after plan sign-off. See the milestone table in
-[`docs/PLAN.md` §7](docs/PLAN.md).
+Production implementation, in active owner-directed development on the session branch:
+M0–M11 complete through v1.11.0; then the 2026 deep research (45 sources) produced a
+charter-compliant roadmap whose items are now all landed — voice (v1.13.0), file memory
+(v1.14.0), scheduled briefings (v1.15.0), guarded desktop awareness (v1.16.0), full-vocabulary
+intent retrain (v1.17.0), synthesis digest (v1.18.0). Milestone history and acceptance
+criteria: [`docs/PLAN.md` §7](docs/PLAN.md). Review candidates `v1.0.0-rc1` … `v1.18.0-rc1`
+(22 drafts) await the owner's publishing decisions; nothing is merged and `main` is
+untouched — the owner merge policy is absolute.

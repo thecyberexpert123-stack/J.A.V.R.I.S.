@@ -188,3 +188,37 @@ The owner pointed at the GUI again after M10/M11. The tempting mistake is to inv
 ## 2026-09-03 · Release engineering: rc tags + draft releases for 1.3.0–1.8.0 — three GitHub traps in one afternoon
 
 Tagged every CI-green milestone commit (`v1.3.0-rc1` … `v1.8.0-rc1`, annotated, commit↔version verified from each tag's own `pyproject.toml`) and let the existing Release workflow build sdist/wheel/deb and open the drafts; then edited the drafts into shape (title, changelog-derived notes, `prerelease`) while keeping them **draft** — publishing stays owner-reserved, and `gh release edit --draft` cannot accidentally publish. Three traps worth the price of admission. First, GitHub Actions creates **no push events when more than three tags arrive in one `git push`** (documented limit) — six tags at once fired zero Release runs, silently; the remedy that works when `gh workflow run` is unavailable is deleting and re-pushing the tags **one per push event**. Second, the Arena integration token has no `actions:write`: `gh workflow run` returns HTTP 403 "Resource not accessible by integration" even though git push and `gh release edit` work — know which writes your token can do before planning around dispatch. Third, `git fetch origin --tags` **clobbers FETCH_HEAD**, so the reset-recovery ritual `reset --hard FETCH_HEAD` can silently land on `main`'s tip after a tags fetch; this clone's refspec is main-only (`origin/<branch>` doesn't exist), so the honest fix is resetting to the full SHA printed by `git ls-remote`. The sandbox also reset a seventh time mid-task — backup first, recover from remote, diff against the backup to prove zero loss, move on. The remote-first discipline is what makes these all recoverable in minutes: nothing lives only here.
+
+---
+
+## 2026-09-04 · Deep research delivered; hybrid residency shipped (v1.11.0 → v1.12.0)
+
+- **The owner-directed deep research** (`docs/RESEARCH-jarvis-agent-linux-2026.md`, 45 tier-labeled sources) replaced instinct with evidence and produced the charter-compliant R1–R5 roadmap. The findings that mattered most: Linux is unusually good at screen-less desktop awareness (AT-SPI over D-Bus — "the desktop already publishes its UI"); proactivity has a taxonomy where **silence is a decision** with a denominator; prompt injection stays unsolved, so containment and consent parity are the durable defenses; and the honest scoring of our own engine ("no synthesis-over-sources playbook") became work items instead of embarrassment. Deliberate divergences were documented as charter positions, not gaps: no autonomy loops, no actuators.
+- **Hybrid residency (ADR-0018, v1.12.0)** shipped the loopback, token-authenticated serve doorway with the discipline the research reinforced: residency is "a doorway, never an actor." That single rule later shaped R3's entire design.
+
+---
+
+## 2026-09-04 · R1 — voice front-end (v1.13.0): presentation, never authority
+
+- Push-to-talk through the same kernel (ADR-0019): `arecord` → whisper-class STT → the normal match/plan/approve/execute/verify path → piper TTS. Zero new Python dependencies; external binaries are probed and honestly reported missing by `voice doctor`.
+- Stub-binary test lessons now institutionalized: bash stubs need `#!/bin/bash` for `${!#}` indirection; the stdin sidecar must APPEND; `shutil.which` returns absolute paths so fake-path stores keep bare names; `TaskStatus.SUCCEEDED.value == "succeeded"` bit us once.
+- The sandbox had no STT/TTS binaries and no Ollama — so the honest-skip design earned its keep: tests assert disclosed skips, and the suite stayed green (690+2) without faking capabilities.
+
+---
+
+## 2026-09-04 · R2 — owner-taught file memory (v1.14.0): the planner reads, never obeys
+
+- Plain-file memory (ADR-0020, Anthropic-pattern) with the MINJA-style threat model answered honestly: write-time hygiene + injection scan (refuse, never sanitize), provenance tags, and a delimited *background context* block in the planner's system prompt — never instructions. Every proposed step still re-validates through the real playbooks.
+- **CI lesson that local gates could not catch:** the py3.10 matrix leg failed on `datetime.UTC` (3.11+). Root cause: mypy checks `src/` only, so test-only 3.11 imports slip every local gate. Remedy applied repo-wide including tests: `from datetime import datetime, timezone` + `datetime.now(timezone.utc)`. Local green ≠ matrix green; the matrix exists for exactly this.
+
+---
+
+## 2026-09-04 · R3–R5b closing sprint (v1.15.0 → v1.18.0): briefings, guarded eyes, the classifier learns the whole catalog, and the digest
+
+- **Platform honesty record:** the sandbox reset 13 times across the engagement (three during this sprint's turns). The recovery ritual (verify parentage before every push; compare `git rev-parse HEAD` to `git ls-remote`; explicit-SHA reset; venv rebuild recipe) turned each into minutes of loss, and — recorded in RELEASING.md — GitHub Actions still fires **no push events when more than three tags arrive in one push**.
+- **R3 briefings (ADR-0021, v1.15.0):** the design win was making *silence* a first-class, ledgered decision with a reported silence rate — the denominator-aware transparency the proactivity literature asks for. The CI catch: our own round-trip test assumed "no systemd," which is true in the sandbox and false on GitHub runners; the fix pins the environment instead of assuming it (test-isolation bug, not product bug — the product's disclosed-skip path was correct).
+- **R4 desktop awareness (ADR-0022, v1.16.0):** inspect-first paid off — the GUI milestone had already made us AT-SPI session-bus clients *without data-boundary guards*, so R4 became a hardening milestone: blocked apps (password managers, keyrings, polkit, terminals) never read; password roles withheld before any name read; sensitive names redacted; content-free audit (a test pins that a distinctive window title appears nowhere in the ledger bytes). One self-inflicted nick: files briefly landed under a typo path (`J.A.V.R.I.S/src`, missing dot) — the smoke test caught it in seconds; moved, typo root removed.
+- **R5a retrain (ADR-0023, v1.17.0):** the classifier had been speaking a 12-intent vocabulary in a 56-playbook world — 44 ids invisible to it. The redesign that matters: **the kernel owns the vocabulary** (trainer derives labels from `PLAYBOOKS`; a test pins model-labels == live catalog, so staleness is a CI failure). The holdout splits unique texts *before* seeded upsampling, so gate numbers stay leakage-free; byte-reproducibility was proven by a double training run with identical sha256.
+- **R5b digest (ADR-0024, v1.18.0):** the test battery earned its name — it caught **"run a health check" being matched by `gui.launch`'s greedy T2 matcher**, i.e. a digest phrase would have attempted an app launch. Digest phrases are now claimed first (T0, no launch), and the no-shadow set is pinned. Catalog 56 → 57 through its own ADR; the vocabulary-retrain cadence from R5a was exercised end-to-end exactly as designed. One silent-miss honest note: the digest paragraph failed to insert into the README last milestone (anchor sentence absent; the fallback branch was a no-op) — caught and fixed in the next turn's documentation sweep.
+
+---
