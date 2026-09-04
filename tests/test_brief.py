@@ -230,15 +230,49 @@ def test_timer_and_service_content(tmp_path: Path) -> None:
     assert "Persistent=true" in timer_content("daily")
 
 
-def test_install_uninstall_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_install_uninstall_round_trip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     from jarvis.brief.install import install_timer
 
+    # pin the environment: CI runners DO have systemctl + XDG_RUNTIME_DIR,
+    # so availability must be forced off to test the honest-skip path
+    monkeypatch.setattr("jarvis.brief.install._systemctl_available", lambda: False)
     assert install_timer("daily", tmp_path) == 0
     assert timer_path(tmp_path).exists()
     out = capsys.readouterr().out
-    assert "NOT enabled" in out  # sandbox has no systemd --user: disclosed
+    assert "NOT enabled" in out  # disclosed skip, never a silent claim
     assert uninstall_timer(tmp_path) == 0
     assert not timer_path(tmp_path).exists()
+
+
+def test_install_enable_uses_fixed_argv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """When systemd --user is available, enabling uses one fixed argv - no shell."""
+    import subprocess as sp
+
+    from jarvis.brief.install import install_timer
+
+    seen: list[list[str]] = []
+
+    class _OK:
+        returncode = 0
+        stderr = ""
+
+    def _fake_run(argv: list[str], **kwargs: object) -> _OK:
+        seen.append(list(argv))
+        return _OK()
+
+    monkeypatch.setattr("jarvis.brief.install._systemctl_available", lambda: True)
+    monkeypatch.setattr(sp, "run", _fake_run)
+    assert install_timer("weekly", tmp_path) == 0
+    out = capsys.readouterr().out
+    assert seen == [
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "--now", "jarvis-brief.timer"],
+    ]
+    assert "enabled + started" in out
 
 
 def test_install_rejects_unknown_schedule(tmp_path: Path) -> None:
