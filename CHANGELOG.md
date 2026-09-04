@@ -29,6 +29,34 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.10.2] - 2026-09-04 — remaining backlog: CI rate-limit remedy, release-doc lessons, README status truth
+
+### Fixed
+- **The documented CI flake class is remediated at the root.** Discovery: the live KB tests
+  (`tests/test_knowledge_live.py`) run in every CI matrix leg and hit `api.github.com`
+  **unauthenticated** — 60 req/h shared per runner IP — the mechanism behind 4+ intermittent
+  `test_cited_kernel_docs_exist_upstream` failures. Remedy, both ends: `fetch.verify_kernel_doc`
+  now sends `GITHUB_TOKEN` from the environment when present (never logged), and retries a
+  rate-limited call (429, or 403 with `x-ratelimit-remaining: 0`) **exactly once**, bounded to 5 s
+  regardless of `Retry-After`, with the retry disclosed in the returned detail; `ci.yml` supplies
+  `GITHUB_TOKEN: ${{ github.token }}` to the Tests step and the M4 grounding step. +5 tests
+  (`tests/test_fetch_resilience.py`) over real sockets: token sent but never leaked, no-token
+  shape, retry-once + disclosure, persistent rate limit stays honest, plain 403 not retried.
+  `StubHTTPServer` gained GET queueing/recording (backward compatible).
+
+### Changed
+- README status line updated (was stale at v1.0.0/M0–M6): now states v1.10.1-era reality —
+  M0–M11 + front-end contract, failure semantics, neural intent recall, and the twelve
+  `-rc1` review candidates awaiting owner release decisions.
+- `docs/RELEASING.md` gains "Tag-push mechanics" — the release-engineering lessons that
+  previously lived only in AGENT-EXPERIENCE: push tags ONE per push event (GitHub creates no
+  push events when more than three tags arrive at once), the `-rc1`/draft convention, the
+  dispatch-token caveat, and the rate-limit-flake verification rule.
+
+### Tests
+- +5; suite: **583 passed + 2 honest skips** (585 collected). No product behavior changes beyond
+  the fetch path described above; wire (`javris-frontend/1`) untouched.
+
 ## [1.10.1] - 2026-09-04 — GUI coordination pass: contract re-verified against kernel 1.10.0 and GUI @ `d5233d5` (owner-directed)
 
 ### Added

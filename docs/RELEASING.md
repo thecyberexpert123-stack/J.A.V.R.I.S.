@@ -19,3 +19,24 @@
 6. To re-run any verification on fresh GitHub VMs on demand:
    **Actions → CI / Container eval / Packaging & install → Run workflow**
    (`workflow_dispatch` is enabled on all three).
+
+## Tag-push mechanics (hard-won, 2026-09-04 — read before cutting tags)
+
+- **Push tags ONE per `git push` event.** GitHub Actions creates *no* push
+  events when more than three tags arrive at once — six tags in a single push
+  fired zero Release runs, silently. Remedies, in order of preference: push
+  each tag individually; or recycle (`git push origin :refs/tags/<t>` then
+  re-push) one at a time.
+- The project convention is **annotated `-rc1` tags at the CI-green commit**
+  (`v1.2.1-rc1`, …, `v1.10.1-rc1`); final (non-rc) tags are cut by the owner
+  when publishing. The Release workflow auto-creates the **draft** with
+  artifacts; the agent then edits title/notes (`gh release edit --draft
+  --prerelease --notes-file …`) with a "pending owner review" disclaimer.
+  Publishing the draft is owner-only and `--draft` cannot publish by accident.
+- `gh workflow run` (dispatch) may be unavailable to automation tokens
+  (HTTP 403, no `actions:write`) — git push and `gh release edit` still work;
+  plan around dispatch, not with it.
+- CI legs that hit api.github.com run with `GITHUB_TOKEN` and fetch.py honors
+  it (plus one bounded retry); if a `tests/test_knowledge_live.py` failure
+  names rate-limiting, verify the paired run at the same commit before
+  post-morteming — the flake class is known and now remediated (v1.10.2).

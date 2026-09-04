@@ -130,7 +130,9 @@ class StubHTTPServer:
 
     def __init__(self) -> None:
         self._queue: list[tuple[int, object]] = []
-        self.requests: list[object] = []  # parsed POST bodies, for wire assertions
+        self._get_queue: list[tuple[int, object]] = []
+        self._get_headers: dict[str, str] = {}
+        self.requests: list[object] = []  # parsed request payloads, for wire assertions
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -138,7 +140,17 @@ class StubHTTPServer:
                 pass
 
             def do_GET(self) -> None:
-                self._send(200, b"{}")
+                outer.requests.append({"method": "GET", "headers": dict(self.headers)})
+                if outer._get_queue:
+                    status, body = outer._get_queue.pop(0)
+                else:
+                    status, body = 200, {}  # default: availability-probe success
+                payload = (
+                    json.dumps(body).encode("utf-8")
+                    if isinstance(body, (dict, list))
+                    else str(body).encode("utf-8")
+                )
+                self._send(status, payload)
 
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -159,6 +171,8 @@ class StubHTTPServer:
             def _send(self, status: int, payload: bytes) -> None:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
+                for key, value in getattr(outer, "_get_headers", {}).items():
+                    self.send_header(key, value)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -173,6 +187,12 @@ class StubHTTPServer:
 
     def queue(self, body: object, status: int = 200) -> None:
         self._queue.append((status, body))
+
+    def queue_get(
+        self, body: object, status: int = 200, headers: dict[str, str] | None = None
+    ) -> None:
+        self._get_queue.append((status, body))
+        self._get_headers = headers or {}
 
     def close(self) -> None:
         self._server.shutdown()

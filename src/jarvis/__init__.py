@@ -8,6 +8,6 @@ milestone plan in ``docs/PLAN.md``. This M0 release contains the package
 root only - implementation begins at M1 per the plan.
 """
 
-__version__ = "1.10.1"
+__version__ = "1.10.2"
 
 __all__ = ["__version__"]

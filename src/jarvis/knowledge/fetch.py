@@ -106,20 +106,79 @@ class OnlineCheck:
 
 
 def verify_kernel_doc(repo: str, ref: str, *, timeout_s: float = 20.0) -> OnlineCheck:
-    """Verify a kernel documentation path exists upstream (GitHub Contents API)."""
+    """Verify a kernel documentation path exists upstream (GitHub Contents API).
+
+    Uses ``GITHUB_TOKEN`` from the environment when present (authenticated
+    limits: 1000+ req/h instead of 60 — CI shares one egress IP across
+    matrix legs, so unauthenticated runs flake on the rate limit). A single
+    polite retry is made when GitHub says rate-limited (429, or 403 with
+    ``x-ratelimit-remaining: 0``), bounded to 5 s regardless of Retry-After;
+    the retry is disclosed in the returned detail. The token is never logged.
+    """
     url = _GITHUB_API.format(repo=repo, ref=ref)
     _check_allowed(url)
-    req = urllib.request.Request(
-        url,
-        headers={"Accept": "application/vnd.github.raw+json", "User-Agent": "jarvis-kb"},
-    )
+    headers = {
+        "Accept": "application/vnd.github.raw+json",
+        "User-Agent": "jarvis-kb",
+        **_github_auth_headers(),
+    }
+    check = _github_contents_request(ref, url, headers, timeout_s)
+    assert check is not None  # _github_contents_request never returns None
+    if _is_rate_limited(check.http_status, check.detail):
+        time.sleep(_bounded_retry_after(check.detail))
+        retried = _github_contents_request(ref, url, headers, timeout_s)
+        assert retried is not None
+        if not _is_rate_limited(retried.http_status, retried.detail):
+            return OnlineCheck(
+                retried.ref,
+                retried.reachable,
+                retried.http_status,
+                f"{retried.detail} (retried once after rate-limit)",
+                retried.checked_url,
+                retried.checked_utc,
+            )
+    return check
+
+
+def _github_auth_headers() -> dict[str, str]:
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _is_rate_limited(status: int | None, detail: str) -> bool:
+    if status == 429:
+        return True
+    return status == 403 and "rate-limit" in detail
+
+
+def _bounded_retry_after(detail: str) -> float:
+    """Retry-After honored up to 5 s (a CLI must not stall on GitHub's sake)."""
+    try:
+        value = float(detail.split("retry-after:", 1)[1])
+    except (IndexError, ValueError):
+        return 2.0
+    return max(0.5, min(value, 5.0))
+
+
+def _github_contents_request(
+    ref: str, url: str, headers: dict[str, str], timeout_s: float
+) -> OnlineCheck:
+    """One Contents-API request, as an OnlineCheck (never raises for HTTP)."""
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    req = urllib.request.Request(url, headers=dict(headers))
     try:
         with _opener().open(req, timeout=timeout_s) as resp:
             size = len(resp.read())
             return OnlineCheck(ref, True, resp.status, f"{size} bytes fetched", url, stamp)
     except urllib.error.HTTPError as exc:
-        return OnlineCheck(ref, False, exc.code, f"HTTP {exc.code}", url, stamp)
+        detail = f"HTTP {exc.code}"
+        response_headers = exc.headers
+        remaining = response_headers.get("x-ratelimit-remaining") if response_headers else None
+        rate_limited = exc.code == 429 or (exc.code == 403 and remaining == "0")
+        if rate_limited:
+            retry_after = response_headers.get("Retry-After") if response_headers else None
+            detail = f"{detail}|rate-limit|retry-after:{retry_after or ''}"
+        return OnlineCheck(ref, False, exc.code, detail, url, stamp)
     except urllib.error.URLError as exc:
         return OnlineCheck(ref, False, None, f"unreachable: {exc.reason}", url, stamp)
 

@@ -34,6 +34,11 @@ jobs:
         run: mypy src/jarvis
 
       - name: Tests (failures annotated)
+        env:
+          # The live KB tests verify citations via api.github.com; the runner
+          # token lifts the per-IP unauthenticated rate limit (fetch.py never
+          # logs it). Prevents the documented 403/429 flake class.
+          GITHUB_TOKEN: ${{ github.token }}
         run: python evals/harness/unit_gate.py
 
       - name: Planner eval (M2, scripted LLM)
@@ -45,6 +50,7 @@ jobs:
       - name: Grounding eval (M4, incl. torvalds/linux upstream verification)
         env:
           JARVIS_ONLINE_DOCS: "1"
+          GITHUB_TOKEN: ${{ github.token }}
         run: python evals/harness/m4_grounding.py --catalog evals/catalog/m4.json --results evals/results/m4-grounding-ci.json
 
   gui-eval:

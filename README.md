@@ -6,7 +6,12 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.0.0 — MILESTONE SERIES COMPLETE` (M0–M6): engine + LLM planner + safety kernel + cited knowledge + GUI control, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Reports: `evals/results/`. See `INSTALL.md`.**
+**Status: `v1.10.1` — M0–M11 complete + GUI front-end contract (`javris-frontend/1`)**: deterministic
+engine + LLM planner with failure semantics (persisted breaker, failure taxonomy, grounded answers,
+`--no-ai` contract) + a purpose-built proposals-only neural intent classifier + safety kernel +
+cited knowledge + MCP surface + verified skill packs + charters + integrity doctor + GUI control,
+packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
+`v1.0.0-rc1` … `v1.10.1-rc1` await the owner's release decisions. Reports: `evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
