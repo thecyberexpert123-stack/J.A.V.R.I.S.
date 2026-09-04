@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS task_meta (
     value   TEXT NOT NULL,
     PRIMARY KEY (task_id, key)
 );
+CREATE TABLE IF NOT EXISTS unknown_requests (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_utc   TEXT NOT NULL,
+    request_text  TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    alternatives  TEXT NOT NULL
+);
 """
 
 
@@ -140,6 +147,40 @@ class Journal:
             (int(limit),),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # -- unknown requests --------------------------------------------------
+    def record_unknown_request(
+        self, request_text: str, reason: str, alternatives: list[str]
+    ) -> None:
+        """Owner-review record of a request nothing could map (ADR-0014 D6).
+
+        This is growth-loop input, not authority: only the owner turns it
+        into a skill pack or KB fact.
+        """
+        self._conn.execute(
+            "INSERT INTO unknown_requests (created_utc, request_text, reason, alternatives)"
+            " VALUES (?,?,?,?)",
+            (
+                _utcnow(),
+                request_text[:200],
+                reason[:200],
+                json.dumps(alternatives)[:600],
+            ),
+        )
+        self._conn.commit()
+
+    def recent_unknown_requests(self, limit: int = 20) -> list[dict[str, object]]:
+        rows = self._conn.execute(
+            "SELECT created_utc, request_text, reason, alternatives FROM unknown_requests"
+            " ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        out: list[dict[str, object]] = []
+        for row in rows:
+            record = dict(row)
+            record["alternatives"] = json.loads(str(record["alternatives"]))
+            out.append(record)
+        return out
 
     # -- steps ------------------------------------------------------------
     def record_step(

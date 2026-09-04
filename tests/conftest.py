@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 from collections.abc import Mapping, Sequence
@@ -129,6 +130,7 @@ class StubHTTPServer:
 
     def __init__(self) -> None:
         self._queue: list[tuple[int, object]] = []
+        self.requests: list[object] = []  # parsed POST bodies, for wire assertions
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -140,7 +142,9 @@ class StubHTTPServer:
 
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
-                self.rfile.read(length)
+                raw = self.rfile.read(length)
+                with contextlib.suppress(Exception):
+                    outer.requests.append(json.loads(raw.decode("utf-8")))
                 if outer._queue:
                     status, body = outer._queue.pop(0)
                 else:
@@ -198,12 +202,21 @@ class FakeProvider:
         self.model = model
         self.raise_on_complete = raise_on_complete
         self.calls: list[tuple[str, str]] = []
+        self.schemas: list[dict[str, object] | None] = []
 
     def available(self) -> bool:
         return True
 
-    def complete(self, system: str, user: str, *, timeout_s: float = 90.0) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        timeout_s: float = 90.0,
+        schema: dict[str, object] | None = None,
+    ) -> str:
         self.calls.append((system, user))
+        self.schemas.append(schema)
         if self.raise_on_complete is not None:
             raise self.raise_on_complete
         if not self._replies:

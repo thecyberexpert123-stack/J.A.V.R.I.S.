@@ -86,8 +86,10 @@ def test_no_backend_refused_with_setup_hint(
     assert main(["--json", "ask", "set", "up", "monitoring"]) == 2
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "refused"
-    assert "no planning backend" in data["error"]
-    assert "Ollama" in data["hint"]
+    # ADR-0014 D6: a request nothing can map is a *processed* unknown.
+    assert data["error"].startswith("unknown-request")
+    assert "Ollama" in data["hint"]  # setup guidance survives
+    assert "did you mean" in data["hint"]  # nearest intents disclosed
 
 
 def test_remote_used_when_local_down(

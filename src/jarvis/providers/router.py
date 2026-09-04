@@ -18,6 +18,7 @@ from jarvis.providers.ollama import OllamaProvider
 from jarvis.providers.openai_compatible import DEFAULT_BASE_URL, KEY_ENV, OpenAICompatibleProvider
 
 REMOTE_DISABLE_ENV = "JARVIS_REMOTE_LLM"
+NO_AI_ENV = "JARVIS_NO_AI"
 
 
 @dataclass(frozen=True)
@@ -34,9 +35,16 @@ def remote_allowed(env: dict[str, str] | None = None) -> bool:
     return source.get(REMOTE_DISABLE_ENV, "1") != "0"
 
 
-def plan_routing(env: dict[str, str] | None = None) -> Routing:
-    """Decide which planning backend to use (cheap availability probes only)."""
+def plan_routing(env: dict[str, str] | None = None, *, enabled: bool = True) -> Routing:
+    """Decide which planning backend to use (cheap availability probes only).
+
+    ``enabled=False`` (CLI ``--no-ai`` / ``JARVIS_NO_AI=1`` — ADR-0014 D7)
+    returns a "none" routing without probing anything: the no-AI contract is
+    a declared operator mode, not an accident of a missing backend.
+    """
     env_map = env or {}
+    if not enabled:
+        return Routing("none", None, f"AI disabled by operator (--no-ai or {NO_AI_ENV}=1)")
     local = OllamaProvider(host=env_map.get("OLLAMA_HOST"), model=env_map.get("JARVIS_LOCAL_MODEL"))
     if local.available():
         return Routing("local", local, "local-first policy (ADR-0003)")

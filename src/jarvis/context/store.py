@@ -85,6 +85,19 @@ def _scan_untrusted(field: str, value: str) -> None:
             )
 
 
+def find_injection_pattern(text: str) -> str | None:
+    """Public scan for AI-synthesized text (ADR-0014 D5).
+
+    Returns the first matching pattern's source, or None. Same pattern family
+    the context store enforces at write time — a model answer that reads like
+    instructions to the operator is refused before it is ever shown.
+    """
+    for pattern in _SCAN_PATTERNS:
+        if pattern.search(text) is not None:
+            return pattern.pattern
+    return None
+
+
 def _row_hash(
     suggestion_id: object, decision: object, reason: object, title: object, created_utc: object
 ) -> str:

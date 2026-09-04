@@ -73,6 +73,17 @@ Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
 commands — it proposes intents that must pass the same validators as the
 deterministic engine (ADR-0007).
 
+**AI failure semantics (ADR-0014):** the AI path is optional, breaker-tracked,
+and honest. A persistently failing model trips a per-provider circuit breaker
+(`status` shows it; `state_dir/ai/breaker.state`), failures are classified
+(`unreachable/timeout/http/malformed/key-missing/breaker-open`), planner
+output is schema-constrained *and* strictly validated, `explain` falls back
+from KB cite-or-abstain to a grounded AI answer only when citations resolve
+to real KB facts, unknown requests return nearest-known intents plus a
+journal record for owner review, and `--no-ai` (or `JARVIS_NO_AI=1`) disables
+every model path in one switch — the agent remains fully usable without any
+AI.
+
 ## MCP surface (ADR-0013 M9a)
 
 `jarvis mcp serve` speaks the Model Context Protocol — newline-delimited JSON-RPC 2.0 on stdio, stdlib-only (no SDK). An MCP client is just another front-end to the same kernel:

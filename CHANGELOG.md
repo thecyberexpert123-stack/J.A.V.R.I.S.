@@ -29,6 +29,24 @@ below each entry were corrected in place.
   slip (HTTP 404). Actual run at `1f9f430`: **33653349705** (build + 5/5 distro jobs
   success), CI run `33653349731` also green. Corrected in place.
 
+## [1.9.0] - 2026-09-04 — M10: AI failure semantics — breaker, taxonomy, grounded answers, no-AI contract (ADR-0014, owner-directed)
+
+### Added
+- **Persisted per-provider circuit breaker** (`providers/breaker.py`): three states (closed/open/half-open), 3 consecutive failures → open, 300 s wall-clock cooldown that survives process boundaries, half-open single-probe recovery; state at `state_dir/ai/breaker.state` — operational `.state` outside the M9c integrity scope (the M9d charter precedent). A hung model now degrades the *second and later* requests to instant honest refusals instead of fresh full timeouts. A malformed model output counts as a provider failure; an honest "unexpressible" does not — the model is healthy, the request is out of vocabulary.
+- **Failure taxonomy** (`ProviderError.kind`): `unreachable | timeout | http | malformed | key-missing | breaker-open`, surfaced in `jarvis ask` output (text + JSON), in `status`, and in breaker records — degraded-mode disclosure: what changed, what still works, what happens next.
+- **Grounded AI answers on KB misses** (`knowledge/ai_answer.py`, `jarvis explain`): deterministic cite-or-abstain runs first and unchanged; on a KB miss the planner backend gets one bounded chance to synthesize an answer from an evidence envelope of real KB facts, citing ONLY supplied fact ids (unknown/empty citations, `abstain:true`, oversized or injection-shaped text → forced abstain; AbstentionBench's structural-abstention lesson). Cited facts get the same on-machine verification rendering; any failure falls back to the deterministic refusal with a one-line disclosure. MCP `jarvis_explain` stays deterministic-only (frozen `javris-frontend/1` contract, latency-stable read-only surface).
+- **Unknown situations are processed, not just refused** (ADR-0014 D6): when neither the engine nor the planner can map a request, `ask` returns top-3 nearest known intents (lexical), journals an `unknown_requests` record for owner review (growth-loop input), and names the teaching paths — `unknown-request:` prefixed in JSON, exit 2 unchanged.
+- **The no-AI contract** (ADR-0014 D7): global `--no-ai` / `JARVIS_NO_AI=1` disables every model path in one switch (routing returns "none" without probing; the full suite passes AI-less — air-gap/audit mode). `JARVIS_REMOTE_LLM=0` remains the remote-only switch.
+- `status` gains an `ai breaker` line; `doctor` reports AI backend state informationally (env-dependent — deliberately not baseline-scoped, ADR-0014 D8).
+- **Research + ADR**: `docs/RESEARCH-ai-resilience-2026.md` (degradation ladders, circuit breakers, AbstentionBench/I-CALM/conformal abstention, structured-output practice — all sourced) and `docs/adr/0014-ai-failure-semantics.md` (decisions D1–D8).
+
+### Changed
+- Planner wire is schema-constrained: Ollama receives the planner's JSON Schema in `format`, OpenAI-compatible receives `json_schema` response format; strict post-validation unchanged (schema-constrained output is still untrusted input). No retries on the planner path — one attempt, then honest failure + breaker record (documented deviation from the "retry briefly" rung: CLI interactivity budget).
+- Internal API additions only: `Provider.complete(schema=…)`, `plan_routing(enabled=…)`, `PlanRefused.kind`, `Answer.ai_text` (additive JSON field), `journal.record_unknown_request()`. CLI exit codes and the `--json` status shape unchanged.
+
+### Tests
+- +40 (`tests/test_ai_resilience.py`): breaker states/persistence/isolation/corruption, taxonomy over real sockets (incl. a hung-server timeout), schema wire assertions via request capture, breaker-gated planner, unknown-request journal, grounded-answer contract (citation subset, abstain, injection scan, fallback), and the no-AI CLI path end to end. Suite: **561 passed + 2 honest skips** (563 collected).
+
 ## [1.8.0] - 2026-09-03 — J.A.V.R.I.S.-GUI wiring: front-end contract (owner-directed)
 
 ### Added

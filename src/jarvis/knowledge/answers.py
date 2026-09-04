@@ -27,6 +27,7 @@ class Answer:
     machine_status: str  # verified | contradicted | unverifiable-here
     machine_detail: str
     note: str
+    ai_text: str = ""  # non-empty only for AI-synthesized answers (ADR-0014 D5)
 
     def to_json_dict(self) -> dict[str, object]:
         return {
@@ -37,6 +38,7 @@ class Answer:
             "sources": [dict(s) for s in self.sources],
             "machine": {"status": self.machine_status, "detail": self.machine_detail},
             "note": self.note,
+            "ai_text": self.ai_text or None,
         }
 
 

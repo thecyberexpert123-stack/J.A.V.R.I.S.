@@ -858,6 +858,30 @@ PLAYBOOKS: tuple[Playbook, ...] = (
 )
 
 
+def nearest_intents(text: str, limit: int = 3) -> list[str]:
+    """Lexically nearest playbook intents for unknown-request disclosure (ADR-0014 D6).
+
+    Suggestions, never executions: the ranking is lexical (difflib similarity
+    plus a token-overlap nudge), so it can point at candidates but carries no
+    authority. Returned labels are `id — description` for direct `jarvis do`
+    or `jarvis plan` follow-up.
+    """
+    import difflib
+
+    request = " ".join(text.lower().split())
+    if not request:
+        return []
+    request_tokens = {t for t in request.split() if len(t) >= 4}
+    scored: list[tuple[float, str]] = []
+    for playbook in PLAYBOOKS:
+        candidate = f"{playbook.id} {playbook.description}".lower()
+        ratio = difflib.SequenceMatcher(None, request, candidate).ratio()
+        overlap = len(request_tokens & {t for t in candidate.split() if len(t) >= 4})
+        scored.append((ratio + 0.05 * overlap, f"{playbook.id} — {playbook.description}"))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [label for _, label in scored[:limit]]
+
+
 def match_intent(text: str) -> tuple[Playbook, Params] | None:
     """Map normalized text to (playbook, params). None = refuse (never guess).
 

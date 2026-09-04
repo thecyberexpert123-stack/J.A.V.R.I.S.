@@ -27,7 +27,14 @@ class OllamaProvider:
     def available(self) -> bool:
         return endpoint_up(f"{self._base}/api/tags", timeout_s=1.0)
 
-    def complete(self, system: str, user: str, *, timeout_s: float = 90.0) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        timeout_s: float = 90.0,
+        schema: dict[str, object] | None = None,
+    ) -> str:
         payload: dict[str, object] = {
             "model": self.model,
             "messages": [
@@ -35,7 +42,9 @@ class OllamaProvider:
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "format": "json",
+            # ADR-0014 D4: constrain generation with a real JSON Schema when
+            # one is supplied; free JSON mode remains the fallback shape.
+            "format": schema if schema is not None else "json",
             "options": {"temperature": 0},
         }
         data = post_json(f"{self._base}/api/chat", payload, timeout_s=timeout_s)

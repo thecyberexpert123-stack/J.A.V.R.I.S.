@@ -8,8 +8,10 @@ Exit codes: 0 success/dry-run · 1 execution or verification failure ·
 from __future__ import annotations
 
 import argparse
+import contextlib
 import io
 import json
+import os
 import sys
 from pathlib import Path
 from typing import cast
@@ -23,14 +25,16 @@ from jarvis.gui.backends import GuiBackendError
 from jarvis.gui.service import GuiPolicyError, GuiService, GuiUnavailable
 from jarvis.gui.wizard import report as wizard_report
 from jarvis.gui.wizard import run_checks as wizard_checks
-from jarvis.journal.sqlite import Journal, default_db_path
+from jarvis.journal.sqlite import Journal, default_db_path, state_dir
+from jarvis.knowledge.ai_answer import answer_with_ai
 from jarvis.knowledge.answers import answer as kb_answer
 from jarvis.knowledge.store import load_kb
 from jarvis.planner.llm import PlanRefused, build_plan
 from jarvis.planner.models import TaskStatus
-from jarvis.planner.playbooks import PLAYBOOKS, match_intent
-from jarvis.providers.base import ProviderError
-from jarvis.providers.router import plan_routing
+from jarvis.planner.playbooks import PLAYBOOKS, match_intent, nearest_intents
+from jarvis.providers.base import FailureKind, ProviderError
+from jarvis.providers.breaker import ProviderBreaker, default_breaker_path
+from jarvis.providers.router import NO_AI_ENV, plan_routing
 from jarvis.safety.approval import ApprovalPolicy, ApprovalRefused
 from jarvis.safety.disclosure import blast_radius
 from jarvis.safety.integrity import issue_canary
@@ -38,6 +42,42 @@ from jarvis.safety.selftest import run_battery
 from jarvis.safety.tiers import Tier
 from jarvis.suggest.engine import generate_suggestions
 from jarvis.system.models import InvalidInputError
+
+
+def _ai_enabled(args: argparse.Namespace) -> bool:
+    """The no-AI contract (ADR-0014 D7): --no-ai flag or JARVIS_NO_AI=1."""
+    if getattr(args, "no_ai", False):
+        return False
+    return os.environ.get(NO_AI_ENV, "") != "1"
+
+
+def _breaker() -> ProviderBreaker:
+    return ProviderBreaker(default_breaker_path())
+
+
+def _unknown_outcome(text: str, error: str, hint: str, journal: Journal | None) -> TaskOutcome:
+    """A processed unknown (ADR-0014 D6): disclose, suggest, record, teach.
+
+    The journal record is growth-loop input for the owner — proactivity
+    proposes, consent executes; JARVIS never turns an unknown into an action.
+    """
+    alternatives = nearest_intents(text)
+    if journal is not None:
+        with contextlib.suppress(Exception):
+            journal.record_unknown_request(text, error[:200], alternatives)
+    parts = [hint]
+    if alternatives:
+        parts.append("did you mean: " + "; ".join(alternatives) + "?")
+    parts.append(
+        "extend the engine: 'jarvis playbooks' lists supported intents; "
+        "cited KB facts and skill packs are owner-curated (jarvis grow --help)."
+    )
+    return TaskOutcome(
+        playbook_id="<unmatched>",
+        status=TaskStatus.REFUSED,
+        error=error,
+        hint=" ".join(parts),
+    )
 
 
 def _print_outcome(outcome: TaskOutcome) -> None:
@@ -105,6 +145,19 @@ def _cmd_status(args: argparse.Namespace) -> int:
     except Exception as exc:  # status must never crash
         llm_line = f"probe failed: {exc}"
     print(f"llm planning    : {llm_line}")
+    try:
+        views = _breaker().views()
+        if views:
+            breaker_line = "; ".join(
+                f"{name}: {view['state']} ({view['failures']} fail/s, last"
+                f" {view['last_reason']} {view['last_utc']})"
+                for name, view in sorted(views.items())
+            )
+        else:
+            breaker_line = "clean (no recorded provider failures)"
+    except Exception as exc:  # status must never crash
+        breaker_line = f"probe failed ({exc})"
+    print(f"ai breaker      : {breaker_line}")
     try:
         kb = load_kb()
         print(f"knowledge base  : v{kb.version}, {len(kb.facts)} cited facts")
@@ -218,9 +271,17 @@ def _cmd_tasks(args: argparse.Namespace) -> int:
     return 0
 
 
-def _ask_flow(orch: Orchestrator, args: argparse.Namespace, text: str) -> TaskOutcome:
-    """Engine-first routing: deterministic playbooks, LLM planner otherwise."""
+def _ask_flow(
+    orch: Orchestrator, args: argparse.Namespace, text: str, journal: Journal | None = None
+) -> TaskOutcome:
+    """Engine-first routing: deterministic playbooks, LLM planner otherwise.
+
+    ADR-0014: the AI path is breaker-tracked and classifies its failures;
+    a request nothing can map becomes a *processed* unknown (nearest intents,
+    journal record, teaching hint) instead of a blind refusal.
+    """
     quiet = bool(args.json)
+    ai_on = _ai_enabled(args)
     try:
         matched = match_intent(text)
     except InvalidInputError as exc:
@@ -234,24 +295,40 @@ def _ask_flow(orch: Orchestrator, args: argparse.Namespace, text: str) -> TaskOu
             print("[engine] deterministic playbook match — LLM not consulted")
         return orch.run_intent(text, dry_run=args.dry_run)
 
-    routing = plan_routing()
+    routing = plan_routing(enabled=ai_on)
     if routing.mode == "none" or routing.provider is None:
-        return TaskOutcome(
-            playbook_id="<unmatched>",
-            status=TaskStatus.REFUSED,
-            error="no planning backend available for this request",
-            hint=(
-                f"{routing.note}. Install Ollama (local-first, ADR-0003) or "
-                "configure the remote endpoint, or use 'jarvis do' with a "
-                "supported playbook intent."
-            ),
+        setup = (
+            "Install Ollama (local-first, ADR-0003) or configure the remote endpoint "
+            "to enable AI planning."
+            if ai_on
+            else "Re-run without --no-ai to enable AI planning for unmapped requests."
+        )
+        return _unknown_outcome(
+            text,
+            "unknown-request: no deterministic playbook matches and no planning backend "
+            "could map this request",
+            f"{routing.note}. {setup} The deterministic engine, cited KB answers and the "
+            "journal still work without AI.",
+            journal,
         )
     provider = routing.provider
+    breaker = _breaker() if ai_on else None
     if not quiet:
         print(f"[planner] asking {routing.mode}:{provider.name}/{provider.model} for a plan...")
     try:
-        proposed = build_plan(text, provider)
+        proposed = build_plan(text, provider, breaker=breaker)
     except PlanRefused as exc:
+        if exc.kind == "unexpressible":
+            if breaker is not None:
+                breaker.record_success(provider.name)
+            return _unknown_outcome(
+                text,
+                f"unknown-request: {exc}",
+                exc.hint or "rephrase the request, or use a supported playbook (jarvis playbooks).",
+                journal,
+            )
+        if breaker is not None:
+            breaker.record_failure(provider.name, "malformed", str(exc))
         return TaskOutcome(
             playbook_id="plan",
             status=TaskStatus.REFUSED,
@@ -259,11 +336,19 @@ def _ask_flow(orch: Orchestrator, args: argparse.Namespace, text: str) -> TaskOu
             hint=exc.hint,
         )
     except ProviderError as exc:
+        if breaker is not None and exc.kind is not FailureKind.BREAKER_OPEN:
+            breaker.record_failure(provider.name, str(exc.kind), str(exc))
         return TaskOutcome(
             playbook_id="plan",
             status=TaskStatus.FAILED,
-            error=f"planning backend failed: {exc}",
+            error=f"planning backend failed ({exc.kind}): {exc}",
+            hint=(
+                "degraded, not broken: the deterministic engine, cited KB answers and the "
+                "journal still work; the AI path is breaker-tracked (jarvis status)."
+            ),
         )
+    if breaker is not None:
+        breaker.record_success(provider.name)
     if not quiet:
         print(
             f"[planner] proposal ({len(proposed.parts)} step/s): "
@@ -286,7 +371,7 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         print("error: empty request", file=sys.stderr)
         return 2
     orch, _journal = _build_orchestrator(args)
-    outcome = _ask_flow(orch, args, text)
+    outcome = _ask_flow(orch, args, text, journal=_journal)
     if args.json:
         print(json.dumps(outcome.to_json_dict(), indent=2))
     else:
@@ -341,7 +426,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 continue
             _print_outcome(orch.undo(tokens[1]))
             continue
-        _print_outcome(_ask_flow(orch, args, line))
+        _print_outcome(_ask_flow(orch, args, line, journal=journal))
 
 
 def _cmd_file(args: argparse.Namespace) -> int:
@@ -375,6 +460,8 @@ def _cmd_explain(args: argparse.Namespace) -> int:
         print(f"error: knowledge base unavailable: {exc}", file=sys.stderr)
         return 1
     result = kb_answer(question, kb)
+    if result.status == "refused" and _ai_enabled(args):
+        result = answer_with_ai(question, kb, enabled=True)
     if args.json:
         print(json.dumps(result.to_json_dict(), indent=2))
         return 0 if result.status != "refused" else 2
@@ -382,6 +469,9 @@ def _cmd_explain(args: argparse.Namespace) -> int:
         print("I cannot answer this from cited knowledge and I will not guess.")
         print(f"hint     : {result.note}")
         return 2
+    if result.ai_text:
+        print(f"answer   : {result.ai_text}")
+        print("           (ai-synthesized; every claim is one of the cited KB facts below)")
     print(f"fact     : {result.fact_id}")
     print(f"claim    : {result.claim}")
     print(f"machine  : {result.machine_status} — {result.machine_detail}")
@@ -573,7 +663,6 @@ def _cmd_safety_check(args: argparse.Namespace) -> int:
 
 
 def _cautious_path() -> Path:
-    from jarvis.journal.sqlite import state_dir
 
     return state_dir() / "cautious"
 
@@ -1165,6 +1254,18 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         f" {context_report['legacy_unhashed']} legacy)"
         + (f" — {context_report['detail']}" if poisoned else "")
     )
+    try:
+        doctor_routing = plan_routing()
+        doctor_views = _breaker().views()
+        doctor_state = (
+            ", ".join(f"{n}:{v['state']}" for n, v in sorted(doctor_views.items())) or "clean"
+        )
+        print(
+            f"ai backend     : {doctor_routing.mode} (breaker: {doctor_state})"
+            " — informational; env-dependent, not baseline-scoped (ADR-0014 D8)"
+        )
+    except Exception:
+        pass
     if report.clean and not poisoned:
         print(
             f"integrity: OK — {len(report.rows)} entries match the baseline "
@@ -1224,6 +1325,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument(
         "--yes", action="store_true", help="consent non-interactively to T2 actions"
+    )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help=(
+            "disable every AI/LLM path this run — deterministic engine, cited KB answers, "
+            "journal only (also JARVIS_NO_AI=1)"
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

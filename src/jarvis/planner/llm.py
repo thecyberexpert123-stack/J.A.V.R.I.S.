@@ -15,10 +15,23 @@ from dataclasses import dataclass
 
 from jarvis.planner.playbooks import Params, Playbook, match_intent
 from jarvis.providers.base import Provider
+from jarvis.providers.breaker import ProviderBreaker, guarded_complete
 
 MAX_STEPS = 6
 MAX_REQUEST_CHARS = 2000
 MAX_STEP_CHARS = 120
+
+# ADR-0014 D4: the planner wire is schema-constrained (Ollama `format`,
+# OpenAI-compatible `json_schema`), and the strict post-validation below is
+# unchanged — schema-constrained output is still untrusted input.
+PLAN_JSON_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "explanation": {"type": "string"},
+        "steps": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["steps"],
+}
 
 _SYSTEM_PROMPT = """You are the planner inside JARVIS, a Linux automation agent.
 Respond with STRICT JSON only - no markdown, no prose outside the JSON:
@@ -52,16 +65,32 @@ class ProposedPlan:
 
 
 class PlanRefused(RuntimeError):
-    """The model's proposal failed validation; refused, never guessed."""
+    """The model's proposal failed validation; refused, never guessed.
 
-    def __init__(self, reason: str, hint: str = "") -> None:
+    ``kind`` (ADR-0014 D1): ``"malformed"`` — the model misbehaved (bad JSON,
+    out-of-vocabulary steps) and counts as a breaker failure;
+    ``"unexpressible"`` — the model honestly reported it cannot express the
+    request with supported intents; the model is healthy, so this must NOT
+    trip the breaker.
+    """
+
+    def __init__(self, reason: str, hint: str = "", *, kind: str = "malformed") -> None:
         super().__init__(reason)
         self.hint = hint
+        self.kind = kind
 
 
-def build_plan(request: str, provider: Provider) -> ProposedPlan:
+def build_plan(
+    request: str, provider: Provider, *, breaker: ProviderBreaker | None = None
+) -> ProposedPlan:
     """Ask *provider* for a plan and strictly validate it against the catalog."""
-    content = provider.complete(_SYSTEM_PROMPT, request[:MAX_REQUEST_CHARS])
+    content = guarded_complete(
+        provider,
+        _SYSTEM_PROMPT,
+        request[:MAX_REQUEST_CHARS],
+        breaker,
+        schema=PLAN_JSON_SCHEMA,
+    )
 
     try:
         data = json.loads(content)
@@ -82,6 +111,7 @@ def build_plan(request: str, provider: Provider) -> ProposedPlan:
         raise PlanRefused(
             "planner returned no steps (it could not express the request with supported intents)",
             hint="try rephrasing, or use a supported playbook (see: jarvis playbooks)",
+            kind="unexpressible",
         )
     if len(raw_steps) > MAX_STEPS:
         raise PlanRefused(f"planner proposed {len(raw_steps)} steps; maximum is {MAX_STEPS}")

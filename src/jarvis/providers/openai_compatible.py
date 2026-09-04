@@ -34,12 +34,27 @@ class OpenAICompatibleProvider:
     def available(self) -> bool:
         return bool(self._key.strip())
 
-    def complete(self, system: str, user: str, *, timeout_s: float = 90.0) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        timeout_s: float = 90.0,
+        schema: dict[str, object] | None = None,
+    ) -> str:
         if not self._key.strip():
             raise ProviderError(
                 f"remote provider selected but {KEY_ENV} is not set; "
-                "export the key or disable remote planning (JARVIS_REMOTE_LLM=0)"
+                "export the key or disable remote planning (JARVIS_REMOTE_LLM=0)",
+                kind="key-missing",
             )
+        if schema is not None:
+            response_format: dict[str, object] = {
+                "type": "json_schema",
+                "json_schema": {"name": "jarvis_plan", "strict": True, "schema": schema},
+            }
+        else:
+            response_format = {"type": "json_object"}
         payload: dict[str, object] = {
             "model": self.model,
             "messages": [
@@ -47,7 +62,7 @@ class OpenAICompatibleProvider:
                 {"role": "user", "content": user},
             ],
             "temperature": 0,
-            "response_format": {"type": "json_object"},
+            "response_format": response_format,
         }
         data = post_json(
             f"{self._base}/chat/completions",
