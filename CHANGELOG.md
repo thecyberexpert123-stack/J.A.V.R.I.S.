@@ -32,6 +32,14 @@ below each entry were corrected in place.
 ## [Unreleased]
 
 ### Added
+- **Deep research** (`docs/RESEARCH-jarvis-agent-linux-2026.md`, owner-directed): how to build a
+  JARVIS-class agent for Linux. Decomposes the MCU target into 12 film-evidenced capabilities,
+  surveys the 2026 state of the art per subsystem (memory; planning/tool use; Linux computer use
+  via AT-SPI; proactivity taxonomy; agent security — injection unsolved, containment durable;
+  local inference and the voice stack), benchmarks the gap against v1.12.0, and proposes a
+  charter-compliant roadmap (voice front-end, provenance-tagged file memory, Level-2
+  propose-only proactivity, AT-SPI guarded family) with deliberate divergences documented.
+  45 sources, tier-labeled. Docs-only.
 - **ADR-0017 — Dragon Fly AI (DFA) alignment** (`docs/adr/0017-dfa-alignment.md`): the owner's
   self-derived agent architecture, assessed layer-by-layer against the source at `1b5d8eb`.
   Verdict: JARVIS already implements DFA's four layers (reasoning → `providers/`, capabilities →
