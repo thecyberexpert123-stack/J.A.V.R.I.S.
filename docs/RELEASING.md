@@ -35,6 +35,16 @@
   Publishing the draft is owner-only and `--draft` cannot publish by accident.
 - **Docs-only changes ship WITHOUT a tag or release** (standing precedent): the rc-tag +
   draft-release pattern is for code milestones only.
+- **Watch CI with bounded snapshots, never blocking watches.** A `gh run watch` on a
+  freshly-pushed run blocks for the run's ENTIRE duration (10+ min for the matrix; serially
+  watching 3 runs ≈ half an hour of dead air — happened 2026-09-05). Correct pattern: poll
+  `gh run list` / `gh run view` snapshots every ~20–30 s and do other work between polls.
+- **A stalled container leg is infra, not code — verify via the paired run.** The
+  execution-eval step inside a packaging leg can hang 40+ min on a runner/image stall
+  (ubuntu-24.04, 2026-09-05) while the same eval passes on every other distro in the same run
+  and on the same commit's pull_request-triggered twin. `gh run rerun` is token-refused; the
+  paired-run precedent (same commit, same workflow, different trigger) is the verification
+  path — disclose it honestly in the release notes.
 - The review queue stands at **22 drafts** (`v1.0.0-rc1` … `v1.18.0-rc1`; each draft +
   prerelease, 3 assets, unpublished). Publishing is owner-reserved and one at a time.
 - `gh workflow run` (dispatch) may be unavailable to automation tokens
