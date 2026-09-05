@@ -145,8 +145,7 @@ def _pack_document(**overrides: Any) -> dict[str, Any]:
         "steps": [
             {"type": {"app": "gedit", "role": "text", "name": "Find", "text": "hello"}},
             {"key": "ctrl-s"},
-            {"action": {"app": "gedit", "role": "push button", "name": "Save",
-                        "action": "click"}},
+            {"action": {"app": "gedit", "role": "push button", "name": "Save", "action": "click"}},
         ],
         "phrases": ["save my gedit file", "gedit save the open file"],
     }
@@ -210,24 +209,36 @@ def test_blocked_app_refused_at_launch(state: Any) -> None:
 
 def test_blocked_app_refused_in_steps_and_focus(state: Any) -> None:
     with pytest.raises(SafetyRefusal, match="blocked list"):
-        appskill.validate_pack(_pack_document(
-            steps=[{"action": {"app": "seahorse", "role": "push button",
-                               "name": "OK", "action": "click"}}],
-            phrases=["seahorse ok"],
-        ))
+        appskill.validate_pack(
+            _pack_document(
+                steps=[
+                    {
+                        "action": {
+                            "app": "seahorse",
+                            "role": "push button",
+                            "name": "OK",
+                            "action": "click",
+                        }
+                    }
+                ],
+                phrases=["seahorse ok"],
+            )
+        )
     with pytest.raises(SafetyRefusal, match="blocked list"):
-        appskill.validate_pack(_pack_document(steps=[{"focus": "KeepAssXC"}],
-                                             phrases=["focus keepassx"]))
+        appskill.validate_pack(
+            _pack_document(steps=[{"focus": "KeepAssXC"}], phrases=["focus keepassx"])
+        )
 
 
 def test_password_role_is_refusable_at_action_layer_not_pack_layer(state: Any) -> None:
     # packs may NAME a password-text role (validation is static); the runtime
     # wall in actions.py refuses before any read — tested below.
-    doc = appskill.validate_pack(_pack_document(
-        steps=[{"type": {"app": "gedit", "role": "password text", "name": "pw",
-                         "text": "x"}}],
-        phrases=["type pw"],
-    ))
+    doc = appskill.validate_pack(
+        _pack_document(
+            steps=[{"type": {"app": "gedit", "role": "password text", "name": "pw", "text": "x"}}],
+            phrases=["type pw"],
+        )
+    )
     assert doc["steps"]
 
 
@@ -257,9 +268,13 @@ def test_step_gates(state: Any) -> None:
     with pytest.raises(SafetyRefusal, match="combo"):
         appskill.validate_pack(_pack_document(steps=[{"key": "ctrl;alt"}]))
     with pytest.raises(SafetyRefusal, match="text"):
-        appskill.validate_pack(_pack_document(steps=[
-            {"type": {"app": "gedit", "role": "text", "name": "Find",
-                      "text": "x" * 201}}]))
+        appskill.validate_pack(
+            _pack_document(
+                steps=[
+                    {"type": {"app": "gedit", "role": "text", "name": "Find", "text": "x" * 201}}
+                ]
+            )
+        )
 
 
 # --------------------------------------------------------------------------
@@ -357,8 +372,14 @@ def test_build_argv_shapes(installed: dict[str, Any]) -> None:
     assert steps[0].argv == ("setsid", "--fork", "gedit", "/home/owner/notes.txt")
     assert steps[0].detach is True
     # 2. API text write through the module CLI
-    assert steps[1].argv[:6] == (sys.executable, "-m", "jarvis.gui.action_exec",
-                                 "--app", "gedit", "--role")
+    assert steps[1].argv[:6] == (
+        sys.executable,
+        "-m",
+        "jarvis.gui.action_exec",
+        "--app",
+        "gedit",
+        "--role",
+    )
     assert "--text" in steps[1].argv and "hello" in steps[1].argv
     assert steps[1].timeout_s == 60.0
     # 3. keyboard last-resort
@@ -376,8 +397,7 @@ def test_build_without_launch_omits_the_step(state: Any) -> None:
 
 def test_build_fails_closed_on_drift(installed: dict[str, Any]) -> None:
     path = appskill.pack_path("gedit-save")
-    path.write_text(path.read_text(encoding="utf-8").replace("ctrl-s", "ctrl-q"),
-                    encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8").replace("ctrl-s", "ctrl-q"), encoding="utf-8")
     with pytest.raises(SafetyRefusal, match="drifted"):
         _gui_app().build({"pack": "gedit-save"}, None)  # type: ignore[arg-type]
 
@@ -391,10 +411,15 @@ def test_verify_uses_the_last_pack_step(installed: dict[str, Any]) -> None:
     from jarvis.execution.runner import ExecResult
 
     pb = _gui_app()
-    ok = pb.verify({}, None, None, [  # type: ignore[arg-type]
-        ExecResult(exit_code=0, stdout_tail="ok", stderr_tail=""),
-        ExecResult(exit_code=1, stdout_tail="", stderr_tail="boom"),
-    ])
+    ok = pb.verify(
+        {},
+        None,
+        None,
+        [  # type: ignore[arg-type]
+            ExecResult(exit_code=0, stdout_tail="ok", stderr_tail=""),
+            ExecResult(exit_code=1, stdout_tail="", stderr_tail="boom"),
+        ],
+    )
     assert ok.ok is False
     assert "boom" in str(ok.checks)  # the failing step's stderr is disclosed
 
@@ -419,12 +444,18 @@ def test_find_node_blocked_app_is_refused_before_the_tree_is_read() -> None:
 def test_find_node_password_role_refused_before_name_read() -> None:
     # the password field sits BEFORE the target in the walk order: the wall
     # must fire before the walk reaches (and reads) anything past it
-    tree = _StubDesktop([
-        _StubNode("gedit", "application", children=[
-            _StubNode("secret", "password text"),
-            _StubNode("Save", "push button", action=_StubAction(["click"])),
-        ])
-    ])
+    tree = _StubDesktop(
+        [
+            _StubNode(
+                "gedit",
+                "application",
+                children=[
+                    _StubNode("secret", "password text"),
+                    _StubNode("Save", "push button", action=_StubAction(["click"])),
+                ],
+            )
+        ]
+    )
     with pytest.raises(ActionRefused, match="password"):
         find_node(tree, app="gedit", role="push button", name="Save")
 
@@ -482,16 +513,14 @@ def fake_pyatspi(monkeypatch: pytest.MonkeyPatch) -> list[_StubNode]:
 
     import types
 
-    monkeypatch.setitem(sys.modules, "pyatspi",
-                        types.SimpleNamespace(Registry=_Registry))
+    monkeypatch.setitem(sys.modules, "pyatspi", types.SimpleNamespace(Registry=_Registry))
     return extras
 
 
 def test_action_exec_success_exit0(fake_pyatspi: Any, capsys: pytest.CaptureFixture[str]) -> None:
     from jarvis.gui.action_exec import main
 
-    rc = main(["--app", "gedit", "--role", "push button", "--name", "Save",
-               "--action", "click"])
+    rc = main(["--app", "gedit", "--role", "push button", "--name", "Save", "--action", "click"])
     assert rc == 0
     line = capsys.readouterr().out.strip().splitlines()[-1]
     assert json.loads(line) == {"ok": True, "performed": "click"}
@@ -500,8 +529,7 @@ def test_action_exec_success_exit0(fake_pyatspi: Any, capsys: pytest.CaptureFixt
 def test_action_exec_text_exit0(fake_pyatspi: Any, capsys: pytest.CaptureFixture[str]) -> None:
     from jarvis.gui.action_exec import main
 
-    rc = main(["--app", "gedit", "--role", "text", "--name", "Find",
-               "--text", "typed by the pack"])
+    rc = main(["--app", "gedit", "--role", "text", "--name", "Find", "--text", "typed by the pack"])
     assert rc == 0
     assert json.loads(capsys.readouterr().out.strip())["ok"] is True
 
@@ -509,8 +537,7 @@ def test_action_exec_text_exit0(fake_pyatspi: Any, capsys: pytest.CaptureFixture
 def test_action_exec_not_found_exit3(fake_pyatspi: Any, capsys: pytest.CaptureFixture[str]) -> None:
     from jarvis.gui.action_exec import main
 
-    rc = main(["--app", "gedit", "--role", "push button", "--name", "Nope",
-               "--action", "click"])
+    rc = main(["--app", "gedit", "--role", "push button", "--name", "Nope", "--action", "click"])
     assert rc == 3
     assert json.loads(capsys.readouterr().out.strip())["ok"] is False
 
@@ -518,8 +545,7 @@ def test_action_exec_not_found_exit3(fake_pyatspi: Any, capsys: pytest.CaptureFi
 def test_action_exec_action_not_published_exit3(fake_pyatspi: Any) -> None:
     from jarvis.gui.action_exec import main
 
-    rc = main(["--app", "gedit", "--role", "push button", "--name", "Save",
-               "--action", "teleport"])
+    rc = main(["--app", "gedit", "--role", "push button", "--name", "Save", "--action", "teleport"])
     assert rc == 3
 
 
@@ -535,10 +561,8 @@ def test_action_exec_blocked_app_exit2(
 
     import types
 
-    monkeypatch.setitem(sys.modules, "pyatspi",
-                        types.SimpleNamespace(Registry=_TrapRegistry))
-    rc = main(["--app", "keepassxc", "--role", "push button", "--name", "OK",
-               "--action", "click"])
+    monkeypatch.setitem(sys.modules, "pyatspi", types.SimpleNamespace(Registry=_TrapRegistry))
+    rc = main(["--app", "keepassxc", "--role", "push button", "--name", "OK", "--action", "click"])
     assert rc == 2
     assert json.loads(capsys.readouterr().out.strip())["refused"]
 
@@ -548,8 +572,9 @@ def test_action_exec_blocked_app_exit2(
 # --------------------------------------------------------------------------
 
 
-def _cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-         *args: str) -> tuple[int, str, str]:
+def _cli(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *args: str
+) -> tuple[int, str, str]:
     from jarvis.cli.app import _cmd_appskill
 
     class _NS:
@@ -565,7 +590,9 @@ def _cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 
 
 def test_cli_wizard_installs_and_prints_receipt(
-    state: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+    state: Any,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     pack_file = tmp_path / "gedit.app-skill.json"
@@ -579,7 +606,9 @@ def test_cli_wizard_installs_and_prints_receipt(
 
 
 def test_cli_wizard_refuses_bad_pack(
-    state: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+    state: Any,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     pack_file = tmp_path / "bad.json"
@@ -589,7 +618,9 @@ def test_cli_wizard_refuses_bad_pack(
 
 
 def test_cli_wizard_bad_json_is_an_error_not_a_crash(
-    state: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+    state: Any,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     pack_file = tmp_path / "broken.json"
@@ -599,7 +630,9 @@ def test_cli_wizard_bad_json_is_an_error_not_a_crash(
 
 
 def test_cli_list_show_remove_roundtrip(
-    state: Any, installed: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+    state: Any,
+    installed: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     rc, out, _ = _cli(monkeypatch, capsys, "list")

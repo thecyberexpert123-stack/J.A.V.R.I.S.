@@ -40,12 +40,8 @@ def _iter_children(node: Any) -> Iterable[Any]:
     stubs typically do. Try the index protocol first, fall back to ``iter``.
     """
     try:
-        get_count = getattr(node, "get_child_count", None) or getattr(
-            node, "getChildCount", None
-        )
-        get_at = getattr(node, "get_child_at_index", None) or getattr(
-            node, "getChildAtIndex", None
-        )
+        get_count = getattr(node, "get_child_count", None) or getattr(node, "getChildCount", None)
+        get_at = getattr(node, "get_child_at_index", None) or getattr(node, "getChildAtIndex", None)
         if callable(get_count) and callable(get_at):
             count = int(get_count())
             return [get_at(i) for i in range(max(0, count))]
