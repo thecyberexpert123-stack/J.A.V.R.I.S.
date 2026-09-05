@@ -59,6 +59,31 @@ cd J.A.V.R.I.S.
 pip install .
 ```
 
+## AI models (optional but recommended)
+
+The deterministic engine works with zero AI. For open-ended planning, JARVIS
+is local-first (ADR-0003/0025) and dual-path with disclosed failover:
+
+```sh
+# local (recommended): Ollama + a small agentic-class model
+ollama pull llama3.2              # 3B class: small machines
+# or: ollama pull llama3.1        # 8B class: strongest local tool-calling
+# or: ollama pull qwen2.5:7b      # 9B-class alternative if you have 8 GB VRAM
+export JARVIS_LOCAL_MODEL=llama3.2   # optional override
+
+# remote (opt-in): any OpenAI-compatible endpoint
+export JARVIS_OPENAI_API_KEY=...  # env only, never logged
+# export JARVIS_OPENAI_BASE_URL=https://api.openai.com/v1
+# export JARVIS_OPENAI_MODEL=gpt-4o-mini
+# export JARVIS_REMOTE_LLM=0      # hard-disable the remote path
+
+jarvis ai status                  # both paths: liveness, models, breakers
+```
+
+If local fails, a configured remote is tried and **the serving backend is
+always disclosed** in the output. `--no-ai` (or `JARVIS_NO_AI=1`) disables
+every AI path in one switch.
+
 ## First run
 
 ```sh

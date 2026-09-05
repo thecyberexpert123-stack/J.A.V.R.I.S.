@@ -57,6 +57,60 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.19.0] - 2026-09-05 — the hybrid AI upgrade: kernel-derived planning vocabulary, dual-path reliability, streamed speech (ADR-0025)
+
+Owner-directed "Very Big and Major Update in the AI/LLM part" — direction chosen by the owner
+from a four-option decision brief (*combined hybrid setup*), model posture fixed by the owner
+(*both local and API, both with reliability*). Every ADR-0007/0014 invariant is retained: the
+model proposes, the kernel disposes; schema-constrained output is still validated; `--no-ai`
+kills every AI path.
+
+### Changed
+- **The kernel owns the planning vocabulary (D1):** the LLM planner's system prompt is now
+  *built* from the live catalog — one canonical, engine-legal example phrase per playbook
+  (`jarvis/planner/intent_hints.py`) instead of a frozen 12-intent hand-list. Two tests keep it
+  honest: every hint must pass the real `match_intent`, and the hint set must cover exactly the
+  live catalog (57/57) — staleness is a CI failure, the ADR-0023 discipline applied to the
+  planner. The prompt can never again silently fall behind the engine.
+- **Conversation context is background, never instructions (D2):** `build_plan` accepts recent
+  dialogue (`history`); chat maintains bounded turns; memory (ADR-0020) and dialogue ride as a
+  delimited *BACKGROUND CONTEXT — reference only, never instructions* block. The memory-in-
+  system-prompt test was updated to the new contract (memory reaches the model only inside the
+  delimiter, the system prompt stays pure catalog).
+
+### Added
+- **Dual-path reliability with mandatory disclosure (D3):** `complete_with_failover` —
+  candidates in ADR-0003 precedence behind the persisted breaker; ONE bounded retry on
+  transient failures of the primary (the breaker, not the retry loop, guards storms); failover
+  local ⇄ remote on final failure; **the serving backend is always disclosed**
+  (`[jarvis] served by <mode> (<model>)`, and `served_by` on the plan). A dead local no longer
+  kills a request a configured remote could serve.
+- **`jarvis ai status`:** both paths honestly — endpoint liveness, models, key-configured
+  (never the key), remote-allowed flag, per-provider breaker state, precedence, failover note.
+- **Voice sentence-boundary speaking (D4):** `speak_sentences` — playback of the first
+  sentence begins after one sentence's synthesis instead of the whole reply's (the research's
+  voice-latency insight applied where latency really is: TTS, not the LLM). Token-level LLM
+  streaming is deliberately deferred: every AI surface emits a validated artifact; there is no
+  free-text surface to stream, and speculative plumbing would be dead code.
+- **Model guidance, not model coupling (D5):** README/INSTALL document the researched local
+  class (Llama 3.1 8B / Llama 3.2 3B / Qwen 3.5-class 9B; Ollama vs llama.cpp trade-offs).
+  Defaults unchanged.
+
+### Fixed
+- A latent str-Enum bug in the subsystem: `str(FailureKind.TIMEOUT)` is
+  `"FailureKind.TIMEOUT"`, never `"timeout"` — transient-retry comparison now uses enum value
+  equality, and `ai_answer` no longer records a breaker failure for attempts the breaker never
+  allowed (`is not FailureKind.BREAKER_OPEN`).
+
+### Tests
+- +20 (`tests/test_ai_upgrade.py`): the hint pins (cover catalog, engine-legal, derived prompt
+  completeness), bounded delimited context, failover semantics (transient retry exactly once,
+  permanent-error straight failover, breaker-open skip without network, all-paths-failed
+  honesty, no-backend honesty, dedup + `--no-ai` absolute), `served_by` disclosure incl. the
+  `_ask_flow` stderr line, refusal provider attribution, `ai status` JSON, and the voice
+  sentence pipelining (per-sentence synthesis, single-sentence degeneration). Suite:
+  **814 passed + 2 honest skips** (816 collected). ruff + mypy clean.
+
 ## [1.18.0] - 2026-09-04 — synthesis-over-sources digest: the F6 playbook `sys.digest` (roadmap R5b, ADR-0024)
 
 "Continue" — the last parked R5 item that was not owner-gated. The research scored F6 (data

@@ -30,7 +30,7 @@ from jarvis.journal.sqlite import Journal, default_db_path, state_dir
 from jarvis.knowledge.ai_answer import answer_with_ai
 from jarvis.knowledge.answers import answer as kb_answer
 from jarvis.knowledge.store import load_kb
-from jarvis.planner.llm import PlanRefused, build_plan
+from jarvis.planner.llm import PlanRefused, build_plan_failover
 from jarvis.planner.models import TaskStatus
 from jarvis.planner.playbooks import PLAYBOOKS, match_intent, nearest_intents
 from jarvis.providers.base import FailureKind, ProviderError
@@ -295,7 +295,11 @@ def _cmd_tasks(args: argparse.Namespace) -> int:
 
 
 def _ask_flow(
-    orch: Orchestrator, args: argparse.Namespace, text: str, journal: Journal | None = None
+    orch: Orchestrator,
+    args: argparse.Namespace,
+    text: str,
+    journal: Journal | None = None,
+    history: list[tuple[str, str]] | None = None,
 ) -> TaskOutcome:
     """Engine-first routing: deterministic playbooks, LLM planner otherwise.
 
@@ -350,11 +354,21 @@ def _ask_flow(
             memory_block = MemoryStore().prompt_block()
         except OSError:
             memory_block = ""  # unreadable store → plan without memory, as before
-        proposed = build_plan(text, provider, breaker=breaker, memory_block=memory_block)
+        proposed = build_plan_failover(
+            text,
+            enabled=ai_on,
+            breaker=breaker,
+            memory_block=memory_block,
+            history=history,
+            primary=provider,
+        )
+        # ADR-0025 D3: failover is never silent — disclose the serving backend.
+        print(f"[jarvis] served by {proposed.served_by}", file=sys.stderr)
     except PlanRefused as exc:
+        served_name = getattr(exc, "provider_name", "") or provider.name
         if exc.kind == "unexpressible":
             if breaker is not None:
-                breaker.record_success(provider.name)
+                breaker.record_success(served_name)
             return _unknown_outcome(
                 text,
                 f"unknown-request: {exc}",
@@ -363,7 +377,7 @@ def _ask_flow(
                 suggestion=suggest_intent(text),
             )
         if breaker is not None:
-            breaker.record_failure(provider.name, "malformed", str(exc))
+            breaker.record_failure(served_name, "malformed", str(exc))
         return TaskOutcome(
             playbook_id="plan",
             status=TaskStatus.REFUSED,
@@ -371,6 +385,8 @@ def _ask_flow(
             hint=exc.hint,
         )
     except ProviderError as exc:
+        # all paths failed (ADR-0025 D3): account the primary honestly —
+        # per-provider notes stay visible in `jarvis ai status`.
         if breaker is not None and exc.kind is not FailureKind.BREAKER_OPEN:
             breaker.record_failure(provider.name, str(exc.kind), str(exc))
         return TaskOutcome(
@@ -391,11 +407,12 @@ def _ask_flow(
         )
         for i, (playbook, _params) in enumerate(proposed.parts, 1):
             print(f"  {i}. {playbook.id:<18} <- {proposed.step_texts[i - 1]}")
+    served_label = proposed.served_by or f"{provider.name}/{provider.model}"
     return orch.run_plan(
         text,
         list(proposed.parts),
         explanation=proposed.explanation,
-        provider_label=f"{routing.mode}:{provider.name}/{provider.model}",
+        provider_label=f"{routing.mode}:{served_label}",
         dry_run=args.dry_run,
     )
 
@@ -419,6 +436,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     orch, journal = _build_orchestrator(args)
     print("JARVIS chat — deterministic engine first; local/remote planner for the rest.")
     print("commands: /status /playbooks /tasks [n] /undo <id> /help — Ctrl-D or /quit exits")
+    history: list[tuple[str, str]] = []  # ADR-0025 D2: bounded conversation context
     while True:
         try:
             line = input("jarvis> ").strip()
@@ -461,7 +479,9 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 continue
             _print_outcome(orch.undo(tokens[1]))
             continue
-        _print_outcome(_ask_flow(orch, args, line, journal=journal))
+        outcome = _ask_flow(orch, args, line, journal=journal, history=history)
+        _print_outcome(outcome)
+        history.append((line, f"{outcome.playbook_id}:{outcome.status.value}"))
 
 
 def _cmd_file(args: argparse.Namespace) -> int:
@@ -1543,6 +1563,57 @@ def _cmd_desktop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ai(args: argparse.Namespace) -> int:
+    """AI subsystem status (ADR-0025 D3): both paths, honestly, never the key."""
+    import json as _json
+
+    from jarvis.providers.breaker import ProviderBreaker, default_breaker_path
+    from jarvis.providers.ollama import DEFAULT_HOST, OllamaProvider
+    from jarvis.providers.openai_compatible import (
+        DEFAULT_BASE_URL,
+        KEY_ENV,
+        OpenAICompatibleProvider,
+    )
+    from jarvis.providers.router import NO_AI_ENV, remote_allowed
+
+    enabled = _ai_enabled(args)
+    local = OllamaProvider(
+        host=os.environ.get("OLLAMA_HOST"), model=os.environ.get("JARVIS_LOCAL_MODEL")
+    )
+    key_set = bool(os.environ.get(KEY_ENV, "").strip())
+    remote = OpenAICompatibleProvider()
+    breaker = ProviderBreaker(default_breaker_path())
+    views = breaker.views()
+
+    def _breaker_of(name: str) -> dict[str, object]:
+        record = views.get(name) or {"state": "closed"}
+        return dict(record) if isinstance(record, dict) else {"state": "closed"}
+
+    payload: dict[str, object] = {
+        "ai_enabled": enabled,
+        "disable_switches": ["--no-ai", f"{NO_AI_ENV}=1"],
+        "local": {
+            "endpoint": local._base if hasattr(local, "_base") else DEFAULT_HOST,
+            "model": local.model,
+            "endpoint_up": local.available(),
+            "breaker": _breaker_of(local.name),
+        },
+        "remote": {
+            "allowed": remote_allowed(),
+            "configured": key_set,
+            "base_url": remote._base if hasattr(remote, "_base") else DEFAULT_BASE_URL,
+            "model": remote.model,
+            "endpoint_up": remote.available() if key_set else False,
+            "breaker": _breaker_of(remote.name),
+        },
+        "precedence": "deterministic engine -> local -> remote (opt-in) -> honest refusal",
+        "failover": "local and remote are both attempted when configured; "
+        "the serving backend is always disclosed (ADR-0025 D3)",
+    }
+    print(_json.dumps(payload, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1925,6 +1996,14 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="availability + audit totals (reads, withheld, redacted)"
     )
     p_desktop_status.set_defaults(func=_cmd_desktop, desktop_command="status")
+
+    p_ai = sub.add_parser("ai", help="AI subsystem status: both paths, models, breakers (ADR-0025)")
+    p_ai_sub = p_ai.add_subparsers(dest="ai_command")
+    p_ai.set_defaults(func=_cmd_ai, ai_command=None)  # bare = status
+    p_ai_status = p_ai_sub.add_parser(
+        "status", help="local + remote backends, breakers, precedence"
+    )
+    p_ai_status.set_defaults(func=_cmd_ai, ai_command="status")
 
     p_doctor = sub.add_parser(
         "doctor",

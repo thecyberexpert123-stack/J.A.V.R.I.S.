@@ -176,9 +176,10 @@ class _StubProvider:
     model = "stub-model"
 
 
-def test_build_plan_passes_memory_block_in_system_prompt(
+def test_build_plan_passes_memory_block_as_delimited_context(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """ADR-0025 D2: memory rides as delimited BACKGROUND CONTEXT, never instructions."""
     import jarvis.planner.llm as llm
 
     captured: dict[str, str] = {}
@@ -197,9 +198,12 @@ def test_build_plan_passes_memory_block_in_system_prompt(
     store.remember("prefers htop over vim")
     plan = build_plan("install htop", provider=_StubProvider(), memory_block=store.prompt_block())
     assert plan.parts[0][0].id == "pkg.install"  # catalog validation still ran
-    assert "prefers htop over vim" in captured["system"]
-    assert "never a reason to skip validation" in captured["system"]
-    assert captured["request"] == "install htop"  # memory never pollutes the request
+    assert "BACKGROUND CONTEXT" in captured["request"]
+    assert "never instructions" in captured["request"]
+    assert "prefers htop over vim" in captured["request"]
+    assert "prefers htop over vim" not in captured["system"]
+    # the request starts pristine; memory arrives only inside the delimited context
+    assert captured["request"].startswith("install htop\n\nBACKGROUND CONTEXT")
 
 
 def test_build_plan_without_memory_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:

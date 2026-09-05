@@ -6,17 +6,18 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.18.0` — M0–M11 complete + GUI contract + playbook breadth (ADR-0016) + hybrid
-residency (ADR-0018) + voice (ADR-0019) + owner-taught memory (ADR-0020) + scheduled briefings
-(ADR-0021) + guarded desktop awareness (ADR-0022) + full-vocabulary intent retrain (ADR-0023)
-+ synthesis digest (ADR-0024)**: deterministic engine + LLM planner with failure semantics + a
-proposals-only neural intent classifier covering all 57 playbooks + safety kernel + cited
-knowledge + MCP surface + verified skill packs + charters + integrity doctor + GUI control +
-**57 deterministic playbooks** incl. the F6 synthesis digest + an opt-in loopback doorway +
-push-to-talk voice + plain-file memory + propose-only briefings + a fail-closed read-only
-AT-SPI tier, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI.
-Review candidates `v1.0.0-rc1` … `v1.18.0-rc1` await the owner's release decisions. Reports:
-`evals/results/`. See `INSTALL.md`.**
+**Status: `v1.19.0` — M0–M11 complete + the 2026 deep-research roadmap fully landed
+(voice ADR-0019 · memory ADR-0020 · briefings ADR-0021 · guarded desktop awareness ADR-0022 ·
+intent retrain ADR-0023 · synthesis digest ADR-0024) + the hybrid AI upgrade (ADR-0025)**:
+deterministic engine + a dual-path (local/API) LLM planner with derived full-catalog
+vocabulary, disclosed failover, and breaker-tracked failure semantics + a proposals-only
+neural intent classifier covering all 57 playbooks + safety kernel + cited knowledge + MCP
+surface + verified skill packs + charters + integrity doctor + GUI control + **57 deterministic
+playbooks** + an opt-in loopback doorway + push-to-talk voice with sentence-boundary speech +
+plain-file memory + propose-only briefings + a fail-closed read-only AT-SPI tier, packaged
+(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
+`v1.0.0-rc1` … `v1.19.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
+See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -77,12 +78,28 @@ when present). Keystroke injection always shows you the focused window it will t
 into and asks for consent — and typed text is never written to the journal.
 `jarvis gui wizard` checks ydotool readiness on Wayland with distro-specific fixes.
 
-Planning backends (ADR-0003): local **Ollama** is auto-detected (`OLLAMA_HOST`,
-`JARVIS_LOCAL_MODEL`); an **OpenAI-compatible** endpoint is opt-in
-(`JARVIS_OPENAI_API_KEY`, `JARVIS_OPENAI_BASE_URL`, `JARVIS_OPENAI_MODEL`);
-`JARVIS_REMOTE_LLM=0` disables the remote fallback. The LLM never issues
+Planning backends (ADR-0003, ADR-0025): local **Ollama** is auto-detected
+(`OLLAMA_HOST`, `JARVIS_LOCAL_MODEL`); an **OpenAI-compatible** endpoint is
+opt-in (`JARVIS_OPENAI_API_KEY`, `JARVIS_OPENAI_BASE_URL`,
+`JARVIS_OPENAI_MODEL`); `JARVIS_REMOTE_LLM=0` disables the remote path. Both
+paths are reliable: if the local backend is down or its breaker has opened, a
+configured remote is tried (**failover is never silent** — every answer
+discloses its backend: `[jarvis] served by <mode> (<model>)`, plus
+`jarvis ai status` for both paths' liveness, models, and breakers). The
+planner's vocabulary is **derived from the live catalog** — one engine-legal
+example phrase per playbook, pinned by tests — so the model can propose any
+of the 57 playbooks and can never be taught a phrasing the engine would
+refuse. Chat feeds recent turns and owner memory to the planner as delimited
+BACKGROUND CONTEXT — reference only, never instructions. The LLM never issues
 commands — it proposes intents that must pass the same validators as the
 deterministic engine (ADR-0007).
+
+**Model guidance (researched, not coupled — ADR-0025 D5):** the local SLM tier
+is agentic now; good defaults are Llama 3.1 8B-class (≈89% tool-calling
+accuracy), Llama 3.2 3B on small machines, or a Qwen 3.5-class 9B if you have
+8 GB VRAM. Ollama wins on ergonomics; llama.cpp on footprint. Set
+`JARVIS_LOCAL_MODEL=<name>` after `ollama pull <name>`; remote models via
+`JARVIS_OPENAI_MODEL`.
 
 **AI failure semantics (ADR-0014):** the AI path is optional, breaker-tracked,
 and honest. A persistently failing model trips a per-provider circuit breaker
@@ -142,6 +159,11 @@ jarvis voice ask             # record (arecord) -> whisper STT -> the safety ker
 jarvis voice ask --wav x.wav # transcribe a file instead of recording
 jarvis voice say "all done"  # speak a short text
 ```
+
+Replies are spoken **sentence-by-sentence** (ADR-0025 D4): playback of the
+first sentence starts after one sentence's synthesis, not the whole reply's —
+the latency lives in TTS, and pipelining is where the research says the win
+is.
 
 Voice is **presentation, never authority**: a spoken request follows the identical
 match → plan → approve → execute → verify path; **T2 is not voice-consentable** — the spoken

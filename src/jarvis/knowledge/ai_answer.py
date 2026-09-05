@@ -30,7 +30,7 @@ from jarvis.knowledge.answers import (
 from jarvis.knowledge.answers import answer as kb_answer
 from jarvis.knowledge.grounding import verify_fact
 from jarvis.knowledge.store import KnowledgeBase
-from jarvis.providers.base import ProviderError
+from jarvis.providers.base import FailureKind, ProviderError
 from jarvis.providers.breaker import ProviderBreaker, default_breaker_path, guarded_complete
 from jarvis.providers.router import plan_routing
 
@@ -136,7 +136,7 @@ def answer_with_ai(
             schema=ANSWER_JSON_SCHEMA,
         )
     except ProviderError as exc:
-        if str(exc.kind) != "breaker-open":
+        if exc.kind is not FailureKind.BREAKER_OPEN:
             breaker.record_failure(provider.name, str(exc.kind), str(exc))
         return replace(
             base,

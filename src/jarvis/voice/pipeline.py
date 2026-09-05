@@ -9,6 +9,7 @@ deterministically refused (consent parity; see ADR-0019 D3).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -22,6 +23,13 @@ from jarvis.voice.detect import VoiceCapabilities
 MAX_VOICE_TEXT_CHARS = 500
 MAX_RECORD_SECONDS = 15
 _SAMPLE_RATE = "16000"
+_SENTENCE_RE = re.compile(r"[^.!?]+[.!?]+(?:\s+|$)|[^.!?!.?]+$")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split on sentence boundaries, keeping punctuation (ADR-0025 D4)."""
+    parts = [match.group(0).strip() for match in _SENTENCE_RE.finditer(text)]
+    return [part for part in parts if part]
 
 
 def _clean_text(text: str, what: str) -> str:
@@ -124,6 +132,24 @@ class VoicePipeline:
         played = self._run(self._player_argv(str(wav)), timeout_s=60.0)
         return played.exit_code == 0
 
+    def speak_sentences(self, text: str) -> bool:
+        """Speak sentence-by-sentence (ADR-0025 D4): first audio sooner.
+
+        Each sentence is synthesized and played in order, so playback of the
+        first sentence begins after ONE sentence's synthesis instead of the
+        whole reply's — the honest form of the research's voice-latency win
+        for a pipeline whose TTS, not its LLM, dominates latency. Returns
+        True if any sentence was spoken (same honesty contract as speak).
+        """
+        sentences = split_sentences(_clean_text(text, "response"))
+        if len(sentences) <= 1:
+            return self.speak(text)
+        spoken = False
+        for sentence in sentences:
+            if self.speak(sentence):
+                spoken = True
+        return spoken
+
     def _player_argv(self, wav: str) -> tuple[str, ...]:
         assert self.caps.player is not None
         if self.caps.player == "paplay":
@@ -144,7 +170,7 @@ class VoicePipeline:
         request = _clean_text(request_text, "request")
         outcome = self.orchestrator.run_intent(request)
         summary = self._summarize(outcome)
-        spoken = self.speak(summary)
+        spoken = self.speak_sentences(summary)
         return summary, outcome, spoken
 
     def _summarize(self, outcome: TaskOutcome) -> str:
