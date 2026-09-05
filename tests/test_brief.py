@@ -290,7 +290,7 @@ def test_install_rejects_unknown_schedule(tmp_path: Path) -> None:
 def test_no_new_playbook_was_added() -> None:
     from jarvis.planner.playbooks import PLAYBOOKS
 
-    assert len(PLAYBOOKS) == 57  # briefings propose, not commands; catalog grew only via ADR-0024
+    assert len(PLAYBOOKS) == 58  # catalog grew via ADR-0024, ADR-0026; briefings still propose
 
 
 def test_cli_bare_run_and_status(

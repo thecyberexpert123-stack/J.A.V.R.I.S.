@@ -57,6 +57,65 @@ below each entry were corrected in place.
   diverged and documented (DFA's autonomous observe-iterate loop contradicts the "no blind
   execution" charter; JARVIS requires a human per request). Docs-only; no behavior change.
 
+## [1.20.0] - 2026-09-05 — the unknown-app answer: guarded AT-SPI actions + owner-taught app packs (ADR-0026)
+
+Owner-directed deep-research milestone: *"When JARVIS will try to control and use another APP,
+which the playbook does not know — how will it do it, and how will I easily do it / set that up
+later?"* Two deliverables, both landed: (a) a rung-ladder the engine walks **inside any
+accessible application it has never been taught**, and (b) a data-only teaching workflow —
+`app-skill/1` packs — by which the owner teaches a new app in minutes without code.
+
+### Added
+
+- **Guarded AT-SPI action layer** (`jarvis/gui/actions.py`): `find_node` walks an
+  application's accessibility tree under the ADR-0022 walls — blocked applications are refused
+  **before the tree is read** (subtree never touched), password roles are refused **before any
+  name is read**, names pass hygiene, and walks are bounded (depth 4 / 256 nodes). On top of it:
+  `list_actions` reads the node's **published** Action interface, `do_named_action` invokes an
+  action **only by its published name** (must report True), and `set_node_text` writes through
+  EditableText. Child traversal speaks both the real pyatspi index protocol
+  (`get_child_count`/`get_child_at_index`) and duck-typed `iter()` stubs.
+- **`jarvis.gui.action_exec`** — the fixed-argv module CLI (ADR-0026 D3): one JSON line out,
+  honest exits (`0` ok / `2` refused-by-a-wall / `3` not found), pyatspi imported lazily so
+  headless machines get an honest diagnostic, never a traceback.
+- **Owner-taught app packs** (`jarvis/gui/appskill.py`, schema `app-skill/1`): a ≤20-line
+  declarative pack (`id`, `description`, optional `app.launch` tokens, owner phrases, bounded
+  steps `focus | action | type | key`) with **no field that can carry a command** — the first
+  launch token must be a bare command name (PATH lookup; no path-based exec), arguments reject
+  shell metacharacters, blocked apps are refused at launch, focus, and per-step level, and
+  every value is length-bounded. Install is atomic with a **sha256 receipt** (the M9c
+  integrity pattern); loads are **fail-closed** — drifted bytes make the pack invisible and
+  the matcher abstains, never half-runs.
+- **`jarvis app-skill wizard|list|show|remove`** — the teach workflow: `wizard --file <pack>`
+  validates the pack **by constructing it through the real `gui.app` builders** (the M9b eval
+  discipline), prints the constructed steps, installs pack + receipt, and honestly notes when
+  it is *replacing* an existing pack. Exit `2` on any refusal, including bad JSON.
+- **`gui.app` playbook (T2)** — the 58th catalog entry: match consults installed packs'
+  anchored phrase regexes; build emits launch (detached `setsid`) → focus (`wmctrl -a`) →
+  API steps (`action_exec`) → keys (`ydotool`, last resort); verify reads the last pack
+  step's real result. One consented T2 task per run, full plan displayed — consent parity
+  with `gui type/key`.
+- **42 new tests** (`tests/test_gui_appskill.py` + catalog pins): walls-before-reads (including
+  a booby-trapped subtree proving blocked apps are never touched), receipt drift → abstain,
+  build argv shapes, action_exec exit codes, wizard round-trip, and the no-shadow rules
+  against `gui.launch`. Battery: **856 passed + 2 skipped**.
+
+### Changed
+
+- Catalog **57 → 58** (breadth discipline, ADR-0026 D5). `gui.app` carries **no static hint**
+  and is **excluded from the classifier vocabulary** — owner-taught playbooks have no static
+  matcher surface to template; absent packs make every proposal path abstain honestly.
+  Registry/hint/vocabulary pins updated with the documented exemptions.
+- README status and INSTALL notes describe the control ladder and the teach workflow.
+
+### Security
+
+- Unknown-app control climbs a fixed ladder — launch → guarded read → **published actions** →
+  EditableText → keys last — and **never** falls to vision, synthetic clicks, or portal input
+  (each parked behind its own future ADR). Blocked applications and password fields are walled
+  **before any read**, at plan time and again at execution time. Packs are data that compile
+  through the kernel: nothing in a pack can widen authority beyond the rungs it composes.
+
 ## [1.19.0] - 2026-09-05 — the hybrid AI upgrade: kernel-derived planning vocabulary, dual-path reliability, streamed speech (ADR-0025)
 
 Owner-directed "Very Big and Major Update in the AI/LLM part" — direction chosen by the owner

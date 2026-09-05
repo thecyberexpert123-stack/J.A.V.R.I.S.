@@ -105,8 +105,13 @@ class _Flaky:
 
 
 def test_hints_cover_exactly_the_live_catalog() -> None:
-    assert set(INTENT_HINTS) == {p.id for p in PLAYBOOKS}
-    assert len(INTENT_HINTS) == 57
+    # ADR-0026 D5 exemption: "gui.app" is owner-taught (app packs); it has no
+    # static hint by design -- absent packs make the matcher abstain, so a
+    # fixed phrase would advertise a capability that may not be installed.
+    owner_taught = {"gui.app"}
+    live = {p.id for p in PLAYBOOKS} - owner_taught
+    assert set(INTENT_HINTS) == live
+    assert len(INTENT_HINTS) == len(live) == 57
 
 
 def test_every_hint_is_engine_legal() -> None:
@@ -125,7 +130,11 @@ def test_system_prompt_is_derived_and_complete() -> None:
     assert "STRICT JSON" in prompt
     for playbook in PLAYBOOKS:
         assert playbook.id in prompt
-        assert f'"{INTENT_HINTS[playbook.id]}"' in prompt
+        hint = INTENT_HINTS.get(playbook.id)
+        if hint is not None:  # gui.app (ADR-0026 D5) is owner-taught: no static hint
+            assert f'"{hint}"' in prompt
+        else:
+            assert playbook.id == "gui.app"
     # the old frozen hand-list is gone: the digest and the fs family must be taught
     assert "system digest" in prompt and "show the last 20 lines" in prompt
 

@@ -45,7 +45,7 @@ def test_catalog_is_families_plus_core() -> None:
     assert len(INSPECT_PLAYBOOKS) == 33
     assert len(FILE_PLAYBOOKS) == 6
     assert len(PROC_PLAYBOOKS) == 5
-    assert len(PLAYBOOKS) == 33 + 6 + 5 + 13  # +1: sys.digest (ADR-0024)
+    assert len(PLAYBOOKS) == 33 + 6 + 5 + 14  # +sys.digest ADR-0024, +gui.app ADR-0026
     ids = [pb.id for pb in PLAYBOOKS]
     assert len(ids) == len(set(ids))
 

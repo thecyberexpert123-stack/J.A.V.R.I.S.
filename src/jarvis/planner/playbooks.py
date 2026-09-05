@@ -8,6 +8,7 @@ engine cannot map unambiguously is refused — never guessed (owner point 6).
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 
@@ -783,6 +784,139 @@ def _undo_gui_launch(params: Params, profile: MachineProfile) -> UndoPlan:
     return _no_undo("a launched app cannot be reverted by the kernel; close it manually")
 
 
+# --------------------------------------------------------------------------
+# playbook: gui.app — owner-taught app packs (ADR-0026 D4/D5)
+# --------------------------------------------------------------------------
+
+
+def _match_gui_app(text: str) -> Params | None:
+    """Match against installed, receipt-verified app packs (never guess)."""
+
+    from jarvis.gui import appskill
+
+    env = dict(os.environ)
+    matched = appskill.match_pack(text, env=env)
+    if matched is None:
+        return None
+    pack, _normalized = matched
+    return {"pack": str(pack["id"])}
+
+
+def _build_gui_app(params: Params, profile: MachineProfile) -> list[PlannedStep]:
+    import sys as _sys
+
+    from jarvis.gui import appskill
+
+    pack_id = str(params.get("pack", ""))
+    pack = appskill.load_pack(pack_id)
+    if pack is None:
+        # fail-closed: vanished bytes or a drifted receipt — never half-run a pack
+        raise SafetyRefusal(f"app pack {pack_id!r} is missing or its receipt has drifted")
+    app_name = ""
+    app_block = pack.get("app")
+    launch: list[str] = []
+    if isinstance(app_block, dict):
+        raw_launch = app_block.get("launch")
+        if isinstance(raw_launch, list):
+            launch = [str(x) for x in raw_launch]
+        if launch:
+            app_name = launch[0]
+    steps: list[PlannedStep] = []
+    if launch:
+        steps.append(
+            PlannedStep(
+                description=f"launch {launch[0]} (app pack {pack_id}, detached)",
+                argv=("setsid", "--fork", *launch),
+                tier=Tier.T2,
+                timeout_s=30.0,
+                detach=True,
+            )
+        )
+    raw_steps = pack.get("steps")
+    ordered = raw_steps if isinstance(raw_steps, list) else []
+    for index, raw in enumerate(ordered, 1):
+        if isinstance(raw, dict) and "focus" in raw:
+            title = str(raw["focus"])
+            steps.append(
+                PlannedStep(
+                    description=f"focus window matching {title!r} (step {index})",
+                    argv=("wmctrl", "-a", title),
+                    tier=Tier.T2,
+                    timeout_s=30.0,
+                )
+            )
+        elif isinstance(raw, dict) and "key" in raw:
+            combo = str(raw["key"])
+            steps.append(
+                PlannedStep(
+                    description=f"send key combo {combo!r} to the focused window (step {index})",
+                    argv=("ydotool", "key", combo),
+                    tier=Tier.T2,
+                    timeout_s=30.0,
+                )
+            )
+        elif isinstance(raw, dict) and ("action" in raw or "type" in raw):
+            body = raw.get("action") if "action" in raw else raw.get("type")
+            if not isinstance(body, dict):
+                raise SafetyRefusal(f"app pack {pack_id!r}: step {index} is malformed")
+            app = str(body.get("app") or app_name)
+            if not app:
+                raise SafetyRefusal(f"app pack {pack_id!r}: step {index} has no app")
+            argv = [
+                _sys.executable,
+                "-m",
+                "jarvis.gui.action_exec",
+                "--app",
+                app,
+                "--role",
+                str(body.get("role") or ""),
+                "--name",
+                str(body.get("name") or ""),
+            ]
+            if "action" in raw:
+                argv += ["--action", str(body.get("action") or "")]
+                description = (
+                    f"invoke {body.get('action')!r} on {body.get('name')!r} ({app}, step {index})"
+                )
+            else:
+                argv += ["--text", str(body.get("text") or "")]
+                description = (
+                    f"type into {body.get('name') or 'the editable'} ({app}, step {index})"
+                )
+            steps.append(
+                PlannedStep(
+                    description=description,
+                    argv=tuple(argv),
+                    tier=Tier.T2,
+                    timeout_s=60.0,
+                )
+            )
+        else:
+            raise SafetyRefusal(f"app pack {pack_id!r}: step {index} is not a bounded step")
+    if not steps:
+        raise SafetyRefusal(f"app pack {pack_id!r} produced no steps")
+    return steps
+
+
+def _verify_gui_app(
+    params: Params,
+    profile: MachineProfile,
+    runner: Runner,
+    step_results: Sequence[ExecResult | None] | None,
+) -> Verification:
+    if not step_results:
+        return Verification(ok=False, detail="no step results recorded")
+    results = [r for r in step_results if r is not None]
+    if not results:
+        return Verification(ok=False, detail="no executed step to verify")
+    last = results[-1]
+    return Verification(
+        ok=last.ok,
+        detail=(last.stdout_tail.strip() or f"exit={last.exit_code}")[:300],
+        checks=(("last pack step succeeded", last.ok, last.stderr_tail[:160] or "ok"),),
+    )
+
+
 _CORE_PLAYBOOKS: tuple[Playbook, ...] = (
     Playbook(
         id="pkg.upgrade",
@@ -893,6 +1027,15 @@ _CORE_PLAYBOOKS: tuple[Playbook, ...] = (
         build=_build_append,
         verify=_verify_append,
         undo=_undo_append,
+    ),
+    Playbook(
+        id="gui.app",
+        description="run an owner-taught app pack (bounded GUI steps; T2, consent-gated; ADR-0026)",
+        tier=Tier.T2,
+        match=_match_gui_app,
+        build=_build_gui_app,
+        verify=_verify_gui_app,
+        undo=_undo_gui_launch,
     ),
     Playbook(
         id="gui.launch",

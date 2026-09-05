@@ -17,9 +17,9 @@ from jarvis.system.models import InvalidInputError, UnsupportedError
 
 def test_registry_has_exactly_fifty_six_playbooks() -> None:
     """Catalog = guarded families (ADR-0016) + the 12 core playbooks."""
-    assert len(PLAYBOOKS) == 57  # ADR-0024 added sys.digest
+    assert len(PLAYBOOKS) == 58  # ADR-0024 sys.digest, ADR-0026 gui.app
     ids = {pb.id for pb in PLAYBOOKS}
-    assert len(ids) == 57  # no duplicate ids
+    assert len(ids) == 58  # no duplicate ids
     # every core playbook survives
     assert {
         "pkg.install",
@@ -181,6 +181,7 @@ def test_tiers_of_all_playbooks() -> None:
         "svc.start": Tier.T2,
         "svc.enable": Tier.T2,
         "gui.launch": Tier.T2,
+        "gui.app": Tier.T2,  # ADR-0026: owner-taught app packs (T2, consent-gated)
         "sys.info": Tier.T0,
         "file.append": Tier.T1,  # registry metadata; steps carry the real tier
         "sys.digest": Tier.T0,  # ADR-0024: read-only synthesis

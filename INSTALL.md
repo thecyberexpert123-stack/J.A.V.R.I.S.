@@ -59,6 +59,19 @@ cd J.A.V.R.I.S.
 pip install .
 ```
 
+## Teaching JARVIS a new app (app packs, ADR-0026)
+
+No playbook for your app yet? Teach it in minutes — a small JSON pack, no code:
+
+```sh
+jarvis app-skill wizard --file my-app.json   # validate-by-construction + receipt
+jarvis app-skill list                        # what JARVIS knows
+jarvis do "<one of your phrases>"            # consented run, plan displayed
+```
+
+See the README's "Unknown apps & owner-taught packs" section for the pack format and the
+walls that apply to every step.
+
 ## AI models (optional but recommended)
 
 The deterministic engine works with zero AI. For open-ended planning, JARVIS

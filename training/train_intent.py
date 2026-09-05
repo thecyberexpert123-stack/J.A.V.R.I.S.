@@ -51,7 +51,14 @@ TARGET_PER_LABEL = 520
 UNKNOWN_TARGET = 1600
 
 # ADR-0023 D1: the kernel owns the vocabulary — sorted playbook ids + unknown.
-LABELS: list[str] = [*sorted({p.id for p in PLAYBOOKS}), UNKNOWN_LABEL]
+# ADR-0026 D5: owner-taught playbooks (gui.app) have no static matcher surface
+# (phrases live in receipt-pinned owner packs), so the classifier cannot
+# template or suggest them — they are excluded from the label vocabulary.
+OWNER_TAUGHT: frozenset[str] = frozenset({"gui.app"})
+LABELS: list[str] = [
+    *sorted({p.id for p in PLAYBOOKS} - OWNER_TAUGHT),
+    UNKNOWN_LABEL,
+]
 
 _PACKAGES = [
     "htop",

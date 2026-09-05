@@ -6,18 +6,19 @@
 >
 > *(Repository keeps its original name `J.A.V.R.I.S.`; the canonical project name is JARVIS per owner ruling, 2026-09-02.)*
 
-**Status: `v1.19.0` — M0–M11 complete + the 2026 deep-research roadmap fully landed
+**Status: `v1.20.0` — M0–M11 complete + the 2026 deep-research roadmap fully landed
 (voice ADR-0019 · memory ADR-0020 · briefings ADR-0021 · guarded desktop awareness ADR-0022 ·
-intent retrain ADR-0023 · synthesis digest ADR-0024) + the hybrid AI upgrade (ADR-0025)**:
-deterministic engine + a dual-path (local/API) LLM planner with derived full-catalog
-vocabulary, disclosed failover, and breaker-tracked failure semantics + a proposals-only
-neural intent classifier covering all 57 playbooks + safety kernel + cited knowledge + MCP
-surface + verified skill packs + charters + integrity doctor + GUI control + **57 deterministic
-playbooks** + an opt-in loopback doorway + push-to-talk voice with sentence-boundary speech +
-plain-file memory + propose-only briefings + a fail-closed read-only AT-SPI tier, packaged
-(wheel/deb/rpm/AUR) and install-verified on all Tier-1 distros in CI. Review candidates
-`v1.0.0-rc1` … `v1.19.0-rc1` await the owner's release decisions. Reports: `evals/results/`.
-See `INSTALL.md`.**
+intent retrain ADR-0023 · synthesis digest ADR-0024) + the hybrid AI upgrade (ADR-0025) + the
+unknown-app answer (ADR-0026)**: deterministic engine + a dual-path (local/API) LLM planner
+with derived full-catalog vocabulary, disclosed failover, and breaker-tracked failure
+semantics + a proposals-only neural intent classifier + safety kernel + cited knowledge + MCP
+surface + verified skill packs + charters + integrity doctor + GUI control + **58
+deterministic playbooks** + guarded AT-SPI actions inside unknown apps + **owner-taught app
+packs** (`jarvis app-skill wizard`) + an opt-in loopback doorway + push-to-talk voice with
+sentence-boundary speech + plain-file memory + propose-only briefings + a fail-closed
+read-only AT-SPI tier, packaged (wheel/deb/rpm/AUR) and install-verified on all Tier-1
+distros in CI. Review candidates `v1.0.0-rc1` … `v1.20.0-rc1` await the owner's release
+decisions. Reports: `evals/results/`. See `INSTALL.md`.**
 Plan accepted 2026-09-02; open decisions recorded in [`docs/PLAN.md` §13](docs/PLAN.md).
 
 | | |
@@ -222,6 +223,43 @@ read**; sensitive names are redacted before display. Every read is audited conte
 a blocked app cannot be listed, focused, or typed into. On-demand only — no scheduled or
 ambient reads; input injection stays parked for its own ADR.
 
+## Unknown apps & owner-taught packs (ADR-0026)
+
+When JARVIS must control an application no playbook knows, it climbs a fixed ladder —
+launch the app → guarded AT-SPI read → invoke the app's **own published actions**
+(`queryAction`/`doAction`) → write text through EditableText → synthetic keys last — and
+honestly reports which rung the app supports. Blocked applications and password fields are
+walled before any read, at plan time and again at execution time. Vision, synthetic clicks,
+and portal input are never used (each parked behind its own future ADR).
+
+Teaching JARVIS a new app is data, not code — a ≤20-line JSON pack, compiled through the
+kernel:
+
+```json
+{
+  "schema": "app-skill/1",
+  "id": "gedit-save",
+  "description": "type into gedit, save via keyboard, click Save",
+  "app": { "launch": ["gedit", "/home/owner/notes.txt"] },
+  "steps": [
+    { "type":   { "app": "gedit", "role": "text", "name": "Find", "text": "hello" } },
+    { "key":    "ctrl-s" },
+    { "action": { "app": "gedit", "role": "push button", "name": "Save", "action": "click" } }
+  ],
+  "phrases": ["save my gedit file"]
+}
+```
+
+```bash
+jarvis app-skill wizard --file gedit-save.json  # validate-by-construction + sha256 receipt
+jarvis app-skill list | show <id> | remove <id>
+jarvis do "save my gedit file"                  # one consented T2 task, plan displayed
+```
+
+No field can carry a command: launch arguments reject shell metacharacters, every value is
+length-bounded, and packs install with a sha256 receipt — any later drift makes the pack
+invisible (fail-closed), never half-run.
+
 ## Hybrid residency (ADR-0018)
 
 By default **nothing runs unless you run it**. If you want front-ends (the GUI, scripts) to
@@ -334,7 +372,8 @@ Production implementation, in active owner-directed development on the session b
 M0–M11 complete through v1.11.0; then the 2026 deep research (45 sources) produced a
 charter-compliant roadmap whose items are now all landed — voice (v1.13.0), file memory
 (v1.14.0), scheduled briefings (v1.15.0), guarded desktop awareness (v1.16.0), full-vocabulary
-intent retrain (v1.17.0), synthesis digest (v1.18.0). Milestone history and acceptance
-criteria: [`docs/PLAN.md` §7](docs/PLAN.md). Review candidates `v1.0.0-rc1` … `v1.18.0-rc1`
-(22 drafts) await the owner's publishing decisions; nothing is merged and `main` is
-untouched — the owner merge policy is absolute.
+intent retrain (v1.17.0), synthesis digest (v1.18.0), the hybrid AI upgrade (v1.19.0), and
+the unknown-app answer with owner-taught app packs (v1.20.0). Milestone history and
+acceptance criteria: [`docs/PLAN.md` §7](docs/PLAN.md). Review candidates `v1.0.0-rc1` …
+`v1.20.0-rc1` (24 drafts) await the owner's publishing decisions; nothing is merged and
+`main` is untouched — the owner merge policy is absolute.

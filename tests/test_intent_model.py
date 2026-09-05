@@ -53,7 +53,10 @@ def test_vocabulary_covers_the_whole_catalog() -> None:
         encoding="utf-8"
     )
     document = json.loads(raw)
-    expected = [*sorted({p.id for p in PLAYBOOKS}), UNKNOWN_LABEL]
+    # ADR-0026 D5: owner-taught gui.app is excluded (no static matcher surface)
+    from training.train_intent import OWNER_TAUGHT
+
+    expected = [*sorted({p.id for p in PLAYBOOKS} - OWNER_TAUGHT), UNKNOWN_LABEL]
     assert document["labels"] == expected
     assert load_model() is not None
     assert load_model().labels == expected  # type: ignore[union-attr]

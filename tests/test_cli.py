@@ -25,7 +25,7 @@ def test_parser_requires_command() -> None:
 def test_playbooks_json_lists_all(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--json", "playbooks"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert len(data) == 57  # ADR-0016 breadth + ADR-0024 sys.digest
+    assert len(data) == 58  # ADR-0016 breadth + ADR-0024 digest + ADR-0026 gui.app
     assert {entry["id"] for entry in data} >= {"pkg.install", "sys.info", "file.append"}
 
 

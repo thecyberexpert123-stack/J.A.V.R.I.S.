@@ -1614,6 +1614,82 @@ def _cmd_ai(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_appskill(args: argparse.Namespace) -> int:
+    """Owner-taught app packs (ADR-0026 D4): wizard / list / show / remove."""
+    import json as _json
+
+    from jarvis.gui import appskill
+    from jarvis.planner.playbooks import PLAYBOOKS
+    from jarvis.safety.tiers import SafetyRefusal
+
+    action = getattr(args, "appskill_command", None)
+    try:
+        if action == "wizard":
+            raw = Path(args.file).read_text(encoding="utf-8")
+            document = _json.loads(raw)
+            pack_id_hint = ""
+            if isinstance(document, dict) and isinstance(document.get("id"), str):
+                pack_id_hint = document["id"]
+            replacing = bool(pack_id_hint) and appskill.load_pack(pack_id_hint) is not None
+            result: dict[str, object] = appskill.install_pack(document)
+            raw_pack = result["pack"]
+            pack = raw_pack if isinstance(raw_pack, dict) else {}
+            pack_id = str(pack["id"])
+            # the eval discipline: the real playbook must construct the pack
+            playbook = next((pb for pb in PLAYBOOKS if pb.id == "gui.app"), None)
+            if playbook is None:  # pragma: no cover - registry constant
+                raise SystemExit("gui.app playbook missing")
+            steps = playbook.build({"pack": pack_id}, None)  # type: ignore[arg-type]
+            if replacing:
+                print(
+                    f"[jarvis] replacing existing pack {pack_id!r} (previous receipt invalidated)"
+                )
+            print(f"[jarvis] app pack {pack_id!r} validated: {len(steps)} step(s) constructed")
+            for i, step in enumerate(steps, 1):
+                print(f"  {i}. {step.description}")
+            print(f"[jarvis] installed: {result['path']}")
+            print(f"[jarvis] receipt sha256: {result['sha256']}")
+            print('[jarvis] run it: jarvis do "<one of your phrases>"  (consent-gated T2)')
+            return 0
+        if action == "list":
+            packs = appskill.installed_packs()
+            if not packs:
+                print("no app packs installed (jarvis app-skill wizard --file <pack> to teach one)")
+                return 0
+            for pack in packs:
+                raw_phrases = pack.get("phrases")
+                phrases = raw_phrases if isinstance(raw_phrases, list) else []
+                first = str(phrases[0]) if phrases else ""
+                raw_steps = pack.get("steps")
+                step_count = len(raw_steps) if isinstance(raw_steps, list) else 0
+                print(f"  {pack['id']!s:<24} steps={step_count:<3} {first}")
+            return 0
+        if action == "show":
+            loaded = appskill.load_pack(args.pack_id)
+            if loaded is None:
+                print(
+                    f"refused: pack {args.pack_id!r} is missing or its receipt has drifted",
+                    file=sys.stderr,
+                )
+                return 2
+            print(_json.dumps(loaded, indent=2))
+            return 0
+        if action == "remove":
+            removed = appskill.remove_pack(args.pack_id)
+            if not removed:
+                print(f"nothing to remove for {args.pack_id!r}")
+                return 0
+            print(f"removed {args.pack_id!r} ({removed} file(s)); phrase(s) no longer match")
+            return 0
+    except SafetyRefusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    except (_json.JSONDecodeError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jarvis",
@@ -1996,6 +2072,25 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="availability + audit totals (reads, withheld, redacted)"
     )
     p_desktop_status.set_defaults(func=_cmd_desktop, desktop_command="status")
+
+    p_appskill = sub.add_parser(
+        "app-skill", help="owner-taught app packs: teach JARVIS a new app (ADR-0026)"
+    )
+    p_appskill_sub = p_appskill.add_subparsers(dest="appskill_command")
+    p_as_wizard = p_appskill_sub.add_parser(
+        "wizard", help="validate + install a pack file (eval-constructed, receipt-pinned)"
+    )
+    p_as_wizard.add_argument("--file", required=True, help="path to the app-skill JSON pack")
+    p_as_wizard.set_defaults(func=_cmd_appskill, appskill_command="wizard")
+    p_appskill_sub.add_parser("list", help="installed app packs").set_defaults(
+        func=_cmd_appskill, appskill_command="list"
+    )
+    p_as_show = p_appskill_sub.add_parser("show", help="print one installed pack")
+    p_as_show.add_argument("pack_id")
+    p_as_show.set_defaults(func=_cmd_appskill, appskill_command="show")
+    p_as_rm = p_appskill_sub.add_parser("remove", help="remove an installed pack")
+    p_as_rm.add_argument("pack_id")
+    p_as_rm.set_defaults(func=_cmd_appskill, appskill_command="remove")
 
     p_ai = sub.add_parser("ai", help="AI subsystem status: both paths, models, breakers (ADR-0025)")
     p_ai_sub = p_ai.add_subparsers(dest="ai_command")
